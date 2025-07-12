@@ -87,13 +87,13 @@ For new users: Use create_or_update_user"""
             prompt=system_message
         )
     
-    async def process_expense(self, message: str, user_telegram_id: str, 
+    async def process_expense(self, message: str, user_telegram_id: str, context: Dict = None,
                         user_info: Dict = None) -> str:
         
-        return await self._handle_expense_directly(message, user_telegram_id, user_info)
+        return await self._handle_expense_directly(message, user_telegram_id, context)
         
 
-    async def _handle_expense_directly(self, message: str, user_telegram_id: str, user_info: Dict = None) -> str:
+    async def _handle_expense_directly(self, message: str, user_telegram_id: str, context: Dict = None) -> str:
         """Handle expense parsing with guaranteed sequential execution"""
         try:
             # Step 1: Parse

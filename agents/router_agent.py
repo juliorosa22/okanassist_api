@@ -122,7 +122,7 @@ class RouterAgent:
         
         if task_type == TaskType.EXPENSE:
             context.update(self._extract_expense_context(message))
-        elif task_type == TaskType.REMINDER:  # Updated from APPOINTMENT
+        if task_type == TaskType.REMINDER:  # Updated from APPOINTMENT
             context.update(self._extract_reminder_context(message))
         
         return context
