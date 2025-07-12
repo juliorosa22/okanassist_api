@@ -1,0 +1,7 @@
+# requirements.txt
+langgraph
+langchain-groq
+langchain-core
+python-telegram-bot
+asyncpg
+python-dotenv==1.0.0
