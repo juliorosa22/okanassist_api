@@ -41,6 +41,11 @@ class OrchestratorAgent:
             print(f"❌ Orchestrator error: {e}")
             return "❌ Sorry, I encountered an error processing your message."
     
+    async def _handle_expense(self, message: str, user_id: str, context: Dict, user_info: Dict = None) -> str:
+        """Delegate to Expense tracker agent"""
+        return await self.expense_agent.process_expense(message, user_id, context)
+    
+    
     async def _handle_reminder(self, message: str, user_id: str, context: Dict, user_info: Dict = None) -> str:
         """Delegate to reminder agent"""
         return await self.reminder_agent.process_reminder(message, user_id, context)
@@ -88,6 +93,17 @@ class OrchestratorAgent:
 Just type naturally! I'll understand what you need. 😊
         """
     
+    async def _handle_general_query(self, message: str, user_id: str, context: Dict) -> str:
+        """Handle general queries and conversation"""
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in ['help', 'what can you do', 'commands']):
+            return self._get_help_message()
+        elif any(word in message_lower for word in ['hello', 'hi', 'hey']):
+            return "👋 Hello! I can help you track expenses and manage reminders. Try saying 'Coffee $4.50' or 'Remind me to call mom tomorrow'."
+        else:
+            return "I can help you track expenses and set reminders. Try 'Coffee $4.50' for expenses or 'Remind me to call mom tomorrow' for reminders. Type 'help' for more examples."
+
     async def check_due_reminders_for_user(self, user_telegram_id: str) -> Optional[str]:
         """Check if user has any due reminders - useful for proactive notifications"""
         return await self.reminder_agent.check_due_reminders(user_telegram_id)

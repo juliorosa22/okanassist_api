@@ -87,49 +87,11 @@ For new users: Use create_or_update_user"""
             prompt=system_message
         )
     
-    async def process_message(self, message: str, user_telegram_id: str, 
+    async def process_expense(self, message: str, user_telegram_id: str, 
                         user_info: Dict = None) -> str:
         
-        # Check if this looks like an expense message first
-        if self._is_expense_message(message):
-            return await self._handle_expense_directly(message, user_telegram_id, user_info)
+        return await self._handle_expense_directly(message, user_telegram_id, user_info)
         
-        config = {"configurable": {"thread_id": user_telegram_id}}
-        
-        if user_info:
-            context_message = f"User info: {user_info.get('first_name', 'User')} (ID: {user_telegram_id})"
-            full_message = f"{context_message}\n\nUser message: {message}"
-        else:
-            full_message = message
-        
-        try:
-            print(f"🔍 Processing message: {message}")
-            print(f"👤 User ID: {user_telegram_id}")
-            
-            # Process with the agent
-            response = await self.agent.ainvoke(
-                {"messages": [HumanMessage(content=full_message)]},
-                config
-            )
-            
-            print(f"🤖 Agent response: {response['messages'][-1].content}")
-            
-            # Extract the response content
-            return response["messages"][-1].content
-            
-        except Exception as e:
-            print(f"❌ Error in process_message: {e}")
-            return f"❌ Sorry, I encountered an error: {str(e)}"
-    
-    def _is_expense_message(self, message: str) -> bool:
-        """Detect if message contains expense information"""
-        import re
-        amount_patterns = [
-            r'\$\d+(?:\.\d{2})?',
-            r'\d+(?:\.\d{2})?\s*(?:dollars?|bucks?|\$)',
-            r'\d+(?:\.\d{2})?\s*usd'
-        ]
-        return any(re.search(pattern, message, re.IGNORECASE) for pattern in amount_patterns)
 
     async def _handle_expense_directly(self, message: str, user_telegram_id: str, user_info: Dict = None) -> str:
         """Handle expense parsing with guaranteed sequential execution"""

@@ -3,8 +3,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 from langchain_core.tools import tool
-import dateutil.parser
-from dateutil.relativedelta import relativedelta
+from dateutil import parser as date_parser
+#from dateutil.relativedelta import relativedelta
 
 from core.database import Database
 from core.models import Reminder

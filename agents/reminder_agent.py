@@ -104,42 +104,8 @@ Always confirm saved reminders with clear details!"""
     
     async def process_reminder(self, message: str, user_telegram_id: str, context: Dict = None) -> str:
         """Process reminder-related messages"""
-        config = {"configurable": {"thread_id": f"{user_telegram_id}_reminders"}}
+        return await self._handle_reminder_directly(message, user_telegram_id, context)
         
-        # Check if this is a direct reminder request
-        if self._is_reminder_request(message):
-            return await self._handle_reminder_directly(message, user_telegram_id, context)
-        
-        # Otherwise use agent for complex queries
-        try:
-            print(f"🔔 Processing reminder: {message}")
-            print(f"👤 User ID: {user_telegram_id}")
-            
-            full_message = message
-            if context:
-                full_message = f"Context: {context}\n\nUser message: {message}"
-            
-            response = await self.agent.ainvoke(
-                {"messages": [{"role": "user", "content": full_message}]},
-                config
-            )
-            
-            print(f"🤖 Reminder agent response: {response['messages'][-1].content}")
-            return response["messages"][-1].content
-            
-        except Exception as e:
-            print(f"❌ Error in reminder processing: {e}")
-            return f"❌ Sorry, I encountered an error: {str(e)}"
-    
-    def _is_reminder_request(self, message: str) -> bool:
-        """Check if message is a direct reminder request"""
-        reminder_indicators = [
-            'remind me', 'don\'t forget', 'remember to', 'set reminder',
-            'remind me to', 'reminder:', 'schedule reminder'
-        ]
-        message_lower = message.lower()
-        return any(indicator in message_lower for indicator in reminder_indicators)
-    
     async def _handle_reminder_directly(self, message: str, user_telegram_id: str, context: Dict = None) -> str:
         """Handle reminder parsing with guaranteed sequential execution"""
         try:

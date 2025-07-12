@@ -76,9 +76,9 @@ class RouterAgent:
                 return TaskType.EXPENSE
         
         # Check for appointment patterns
-        for pattern in self.patterns[TaskType.APPOINTMENT]:
+        for pattern in self.patterns[TaskType.REMINDER]:
             if re.search(pattern, message, re.IGNORECASE):
-                return TaskType.APPOINTMENT
+                return TaskType.REMINDER
         
         # Check for summary requests
         summary_keywords = ['summary', 'report', 'total', 'spent', 'how much']
