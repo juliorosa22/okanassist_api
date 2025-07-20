@@ -175,20 +175,21 @@ async def test_individual_component(component: str):
     config.validate()
     database = Database(config.DATABASE_URL)
     await database.connect()
+    user_id_test="7461277257"
     
     try:
         if component == "expense":
             print("🧪 Testing expense agent...")
             from agents.expense_agent import ExpenseAgent
             agent = ExpenseAgent(config.GROQ_API_KEY, config.DATABASE_URL, database)
-            response = await agent.process_message("Coffee $4.50", "test_user")
+            response = await agent.process_expense("Coffee $4.50", user_id_test)
             print(f"Response: {response}")
             
         elif component == "reminder":
             print("🧪 Testing reminder agent...")
             from agents.reminder_agent import ReminderAgent
             agent = ReminderAgent(config.GROQ_API_KEY, database)
-            response = await agent.process_reminder("Remind me to call mom tomorrow", "test_user")
+            response = await agent.process_reminder("Remind me to call mom tomorrow", user_id_test)
             print(f"Response: {response}")
             
         elif component == "router":
@@ -204,7 +205,7 @@ async def test_individual_component(component: str):
             ]
             
             for msg in test_cases:
-                task_type, context = await router.route_message(msg, "test_user")
+                task_type, context = await router.route_message(msg, user_id_test)
                 print(f"'{msg}' → {task_type.value} | Context: {context.get('urgency', 'N/A')}")
                 
         else:

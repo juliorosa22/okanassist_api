@@ -3,9 +3,9 @@ import re
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 from langchain_core.tools import tool
-from dateutil import parser as date_parser
+#from dateutil import parser as date_parser
 #from dateutil.relativedelta import relativedelta
-
+from core.models import ReminderType, Priority
 from core.database import Database
 from core.models import Reminder
 
@@ -141,60 +141,92 @@ async def parse_reminder_from_message(message: str) -> Dict:
     # Determine priority
     priority = _determine_priority(message, description)
     
-    if not description:
-        return {
-            "success": False,
-            "error": "Could not extract reminder description",
-            "message": message
-        }
-    
+    validated_data = _validate_reminder_data(title, reminder_type, priority)
+
     result = {
         "success": True,
-        "title": title,
+        "title": validated_data["title"],
         "description": description,
         "due_date": due_date,
         "due_time": due_time,
-        "reminder_type": reminder_type,
-        "priority": priority,
+        "reminder_type": validated_data["reminder_type"],
+        "priority": validated_data["priority"],
         "original_message": message
     }
     
     print(f"✅ Parsed reminder: {result}")
     return result
 
+
+
 def _determine_reminder_type(description: str) -> str:
     """Determine reminder type based on description"""
+    if not description:
+        return ReminderType.GENERAL.value
+    
     description_lower = description.lower()
     
     task_keywords = ['call', 'email', 'buy', 'pick up', 'finish', 'complete', 'do', 'send', 'submit']
     event_keywords = ['meeting', 'dinner', 'lunch', 'appointment', 'party', 'concert', 'game']
     deadline_keywords = ['deadline', 'due', 'payment', 'bill', 'submit', 'file']
     
+    # Check each type in priority order
     if any(keyword in description_lower for keyword in deadline_keywords):
-        return 'deadline'
+        return ReminderType.DEADLINE.value
     elif any(keyword in description_lower for keyword in event_keywords):
-        return 'event'
+        return ReminderType.EVENT.value
     elif any(keyword in description_lower for keyword in task_keywords):
-        return 'task'
+        return ReminderType.TASK.value
     else:
-        return 'general'
+        return ReminderType.GENERAL.value
+
+
+def _validate_reminder_data(title: str, reminder_type: str, priority: str) -> Dict[str, str]:
+    """Validate and sanitize reminder data"""
+    validated_data = {}
+    
+    # Validate title
+    validated_data["title"] = title.strip() if title else "Reminder"
+    
+    # Validate reminder_type
+    valid_types = [t.value for t in ReminderType]
+    if reminder_type in valid_types:
+        validated_data["reminder_type"] = reminder_type
+    else:
+        print(f"⚠️ Invalid reminder type '{reminder_type}', using 'general'")
+        validated_data["reminder_type"] = ReminderType.GENERAL.value
+    
+    # Validate priority
+    valid_priorities = [p.value for p in Priority]
+    if priority in valid_priorities:
+        validated_data["priority"] = priority
+    else:
+        print(f"⚠️ Invalid priority '{priority}', using 'medium'")
+        validated_data["priority"] = Priority.MEDIUM.value
+    
+    return validated_data    
+
 
 def _determine_priority(message: str, description: str) -> str:
     """Determine priority based on message content"""
+    if not message:
+        return Priority.MEDIUM.value
+    
     message_lower = message.lower()
     
-    urgent_keywords = ['urgent', 'asap', 'immediately', 'important', 'critical']
-    high_keywords = ['important', 'soon', 'today', 'deadline']
-    low_keywords = ['sometime', 'when you can', 'eventually']
+    urgent_keywords = ['urgent', 'asap', 'immediately', 'important', 'critical', 'emergency']
+    high_keywords = ['important', 'soon', 'today', 'deadline', 'must', 'need to']
+    low_keywords = ['sometime', 'when you can', 'eventually', 'maybe', 'if possible']
     
+    # Check in priority order (most urgent first)
     if any(keyword in message_lower for keyword in urgent_keywords):
-        return 'urgent'
+        return Priority.URGENT.value
     elif any(keyword in message_lower for keyword in high_keywords):
-        return 'high'
+        return Priority.HIGH.value
     elif any(keyword in message_lower for keyword in low_keywords):
-        return 'low'
+        return Priority.LOW.value
     else:
-        return 'medium'
+        return Priority.MEDIUM.value
 
 @tool
 async def save_reminder(user_telegram_id: str, title: str, description: str,
@@ -221,6 +253,9 @@ async def save_reminder(user_telegram_id: str, title: str, description: str,
         return {"success": False, "error": "Database not available"}
     
     try:
+        # Validate and sanitize input data
+        validated_data = _validate_reminder_data(title, reminder_type, priority)
+        
         # Parse due datetime
         due_datetime = None
         if due_date:
@@ -229,20 +264,22 @@ async def save_reminder(user_telegram_id: str, title: str, description: str,
             else:
                 due_datetime = datetime.fromisoformat(f"{due_date} 09:00")  # Default to 9 AM
         
-        # Create reminder object
+        # Create reminder object with validated data
         reminder = Reminder(
             user_telegram_id=user_telegram_id,
-            title=title,
-            description=description,
+            title=validated_data["title"],
+            description=description.strip() if description else validated_data["title"],
             due_datetime=due_datetime,
-            reminder_type=reminder_type,
-            priority=priority,
+            reminder_type=validated_data["reminder_type"],
+            priority=validated_data["priority"],
             is_completed=False,
             created_at=datetime.now()
         )
         
         # Save to database
         saved_reminder = await db.save_reminder(reminder)
+        
+        print(f"✅ REMINDER SAVED: ID={saved_reminder.id}, Type={saved_reminder.reminder_type}, Priority={saved_reminder.priority}")
         
         return {
             "success": True,
@@ -257,7 +294,7 @@ async def save_reminder(user_telegram_id: str, title: str, description: str,
     except Exception as e:
         print(f"❌ SAVE REMINDER ERROR: {e}")
         return {"success": False, "error": str(e)}
-
+    
 @tool
 async def get_user_reminders(user_telegram_id: str, include_completed: bool = False, limit: int = 10) -> Dict:
     """

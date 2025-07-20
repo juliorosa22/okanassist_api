@@ -76,8 +76,7 @@ User: "Coffee $4.50"
 
 🚫 DO NOT just chat about expenses - ALWAYS use the tools to save them!
 
-For summaries: Use get_user_expense_summary
-For new users: Use create_or_update_user"""
+For summaries: Use get_user_expense_summary"""
         
         # Create the agent
         self.agent = create_react_agent(
@@ -102,19 +101,21 @@ For new users: Use create_or_update_user"""
                 return f"❌ {parse_result.get('error', 'Could not parse expense')}"
             
             # Step 2: Categorize
-            category = await categorize_expense_description.ainvoke({"description": parse_result["description"]})
-            
+            category_result = await categorize_expense_description.ainvoke({"description": parse_result["description"]})
+            category = category_result if isinstance(category_result, str) else str(category_result)
+        
             # Step 3: Detect merchant (optional)
-            merchant = await detect_merchant_from_description.ainvoke({"description": parse_result["description"]})
-            
+            merchant_result = await detect_merchant_from_description.ainvoke({"description": parse_result["description"]})
+            merchant = merchant_result if isinstance(merchant_result, str) else None
+
             # Step 4: Save with all data
             save_result = await save_user_expense.ainvoke({
-                "user_telegram_id": user_telegram_id,
-                "amount": parse_result["amount"],
-                "description": parse_result["description"],
-                "category": category,
-                "original_message": message,
-                "merchant": merchant
+                "user_telegram_id": str(user_telegram_id),
+                "amount": float(parse_result["amount"]),
+                "description": str(parse_result["description"]),
+                "category": str(category),  # Ensure it's a string
+                "original_message": str(message),
+                "merchant": str(merchant) if merchant else None  # Ensure it's a string or None
             })
             
             if save_result.get("success"):

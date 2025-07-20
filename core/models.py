@@ -28,6 +28,7 @@ class User:
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     def get_display_name(self) -> str:
         """Get user's display name"""

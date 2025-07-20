@@ -211,32 +211,48 @@ class Database:
     async def save_expense(self, expense: Expense) -> Expense:
         """Save expense to database"""
         async with self.pool.acquire() as conn:
-            expense_id = await conn.fetchval("""
-                INSERT INTO expenses (
-                    user_telegram_id, amount, description, category, 
-                    original_message, merchant, date
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id
-            """, 
-                expense.user_telegram_id,
-                expense.amount,
-                expense.description,
-                expense.category,
-                expense.original_message,
-                expense.merchant,
-                expense.date or datetime.now()
-            )
+            # Add debug logging
+            print(f"🔍 DEBUG - About to execute query with parameters:")
+            print(f"  $1 user_telegram_id: {type(expense.user_telegram_id)} = {expense.user_telegram_id}")
+            print(f"  $2 amount: {type(expense.amount)} = {expense.amount}")
+            print(f"  $3 description: {type(expense.description)} = {expense.description}")
+            print(f"  $4 category: {type(expense.category)} = {expense.category}")
+            print(f"  $5 original_message: {type(expense.original_message)} = {expense.original_message}")
+            print(f"  $6 merchant: {type(expense.merchant)} = {expense.merchant}")
+            print(f"  $7 date: {type(expense.date)} = {expense.date}")
             
-            expense.id = expense_id
-            
-            # Log activity
-            await self._log_user_activity(
-                expense.user_telegram_id, 
-                'expense_added', 
-                {'expense_id': expense_id, 'amount': float(expense.amount), 'category': expense.category}
-            )
-            
-            return expense
+            try:
+                expense_id = await conn.fetchval("""
+                    INSERT INTO expenses (
+                        user_telegram_id, amount, description, category, 
+                        original_message, merchant, date
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    RETURNING id
+                """, 
+                    expense.user_telegram_id,
+                    expense.amount,
+                    expense.description,
+                    expense.category,
+                    expense.original_message,
+                    expense.merchant,
+                    expense.date or datetime.now()
+                )
+                
+                expense.id = expense_id
+                
+                # Log activity
+                await self._log_user_activity(
+                    expense.user_telegram_id, 
+                    'expense_added', 
+                    {'expense_id': expense_id, 'amount': float(expense.amount), 'category': expense.category}
+                )
+                
+                return expense
+                
+            except Exception as e:
+                print(f"❌ DATABASE ERROR: {e}")
+                print(f"🔍 Full exception: {type(e)} - {str(e)}")
+                raise  # Re-raise the exception
     
     async def get_user_expenses(self, telegram_id: str, days: int = 30) -> List[Expense]:
         """Get user's recent expenses"""
@@ -320,7 +336,7 @@ class Database:
                     reminder_type, priority, is_completed, is_recurring,
                     recurrence_pattern, notification_sent, snooze_until, tags,
                     created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING id
             """, 
                 reminder.user_telegram_id,
@@ -334,9 +350,7 @@ class Database:
                 reminder.recurrence_pattern,
                 reminder.notification_sent,
                 reminder.snooze_until,
-                reminder.tags,
-                reminder.created_at or datetime.now(),
-                datetime.now()
+                reminder.tags
             )
             
             reminder.id = reminder_id
@@ -645,11 +659,22 @@ class Database:
     async def _log_user_activity(self, telegram_id: str, activity_type: str, activity_data: Dict[str, Any] = None):
         """Log user activity"""
         async with self.pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO user_activity (user_telegram_id, activity_type, activity_data)
-                VALUES ($1, $2, $3)
-            """, telegram_id, activity_type, activity_data)
-    
+            try:
+                import json
+                
+                # Convert dict to JSON string for JSONB field
+                activity_json = json.dumps(activity_data) if activity_data else None
+                
+                await conn.execute("""
+                    INSERT INTO user_activity (user_telegram_id, activity_type, activity_data)
+                    VALUES ($1, $2, $3)
+                """, telegram_id, activity_type, activity_json)
+                
+            except Exception as e:
+                print(f"❌ ACTIVITY LOG ERROR: {e}")
+                # Don't let activity logging failure break the main operation
+                pass    
+
     async def get_user_activity_summary(self, telegram_id: str, days: int = 30) -> UserActivity:
         """Get user activity summary"""
         async with self.pool.acquire() as conn:

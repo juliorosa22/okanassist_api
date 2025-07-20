@@ -4,7 +4,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
     filters, ContextTypes
 )
-
+from typing import Dict
 from agents.orchestrator_agent import OrchestratorAgent
 
 class TelegramBot:
@@ -203,7 +203,8 @@ Just talk to me naturally! 😊
             'username': user.username,
             'last_name': user.last_name
         }
-        
+        # Ensure user exists in database (auto-create if needed)
+        await self._ensure_user_exists(user.id, user_info)
         print(f"📱 Message from {user.first_name} ({user.id}): {message}")
         
         # Let orchestrator handle routing and processing
@@ -217,6 +218,38 @@ Just talk to me naturally! 😊
         
         await update.message.reply_text(response)
     
+    async def _ensure_user_exists(self, user_id: int, user_info: Dict):
+        """Ensure user exists in database, create if not"""
+        try:
+            # Check if user exists
+            existing_user = await self.database_instance.get_user(str(user_id))
+            
+            if not existing_user:
+                # Create new user
+                from core.models import User
+                
+                new_user = User(
+                    telegram_id=str(user_id),
+                    username=user_info.get('username'),
+                    first_name=user_info.get('first_name'),
+                    last_name=user_info.get('last_name')
+                )
+                
+                await self.database_instance.create_user(new_user)
+                print(f"✅ New user created: {user_info.get('first_name')} ({user_id})")
+            else:
+                # Update existing user info if changed
+                await self.database_instance.create_user(User(
+                    telegram_id=str(user_id),
+                    username=user_info.get('username'),
+                    first_name=user_info.get('first_name'),
+                    last_name=user_info.get('last_name')
+                ))
+                print(f"✅ User updated: {user_info.get('first_name')} ({user_id})")
+                
+        except Exception as e:
+            print(f"❌ Error ensuring user exists: {e}")
+
     async def set_commands(self):
         """Set bot commands for better UX"""
         commands = [

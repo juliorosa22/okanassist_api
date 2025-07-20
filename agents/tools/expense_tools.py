@@ -106,17 +106,13 @@ async def save_user_expense(user_telegram_id: str, amount: float, description: s
     """
     print(f"💾 SAVING EXPENSE: ${amount} - {description} - {category}")
     
-    # Validate category is not empty
-    if not category or category.strip() == "":
-        print("⚠️ EMPTY CATEGORY DETECTED - Re-categorizing...")
-        category = categorize_expense(description)  # Direct function call as fallback
-        print(f"✅ FALLBACK CATEGORY: '{category}'")
     
     if not db:
         return {"success": False, "error": "Database not available"}
     
     try:
         # Create expense object
+
         expense = Expense(
             user_telegram_id=user_telegram_id,
             amount=Decimal(str(amount)),
@@ -126,7 +122,7 @@ async def save_user_expense(user_telegram_id: str, amount: float, description: s
             merchant=merchant,
             date=datetime.now()
         )
-        
+        print(description)
         # Save to database
         saved_expense = await db.save_expense(expense)
         
