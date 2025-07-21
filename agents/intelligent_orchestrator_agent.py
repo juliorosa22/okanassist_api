@@ -60,7 +60,11 @@ class IntelligentOrchestratorAgent:
             # Get user context for intelligent routing
             user_context = await self._get_user_context(platform_type, platform_user_id)
             
-            # Intelligently route the message
+            # 🔧 NEW: Check if user is registered before routing
+            if user_context["is_new_user"]:
+                return await self._handle_unregistered_user(message, user_context, platform_type)
+            
+            # User is registered - proceed with intelligent routing
             routing_result = await self._intelligent_routing(message, user_context)
             
             if not routing_result.get("success"):
@@ -71,7 +75,7 @@ class IntelligentOrchestratorAgent:
             
             print(f"🎯 INTELLIGENT ROUTING: {intent} (confidence: {confidence:.2f}) | Platform: {platform_type}")
             
-            # Route to appropriate intelligent agent
+            # Route to appropriate intelligent agent (user is guaranteed to be registered)
             if intent == "expense":
                 self.metrics["expense_requests"] += 1
                 return await self.expense_agent.process_expense(message, platform_type, platform_user_id)
@@ -143,6 +147,56 @@ class IntelligentOrchestratorAgent:
                 "is_new_user": True
             }
     
+    async def _handle_unregistered_user(self, message: str, user_context: Dict[str, Any], platform_type: str) -> str:
+        """
+        Handle messages from unregistered users with helpful registration guidance
+        """
+        
+        language = user_context.get("language", "en")
+        
+        # Generate registration prompt in user's language
+        registration_prompt = f"""Generate a helpful registration message for a new user.
+
+    USER CONTEXT:
+    - Language: {language}
+    - Platform: {platform_type}
+    - Message: "{message}"
+
+    INSTRUCTIONS:
+    1. Respond in {language}
+    2. Welcome them warmly
+    3. Explain they need to register first
+    4. Mention the platform they're using
+    5. Provide clear next steps
+    6. Be encouraging and helpful
+
+    EXAMPLES:
+    - English: "👋 Welcome! I'd love to help you track expenses and reminders, but you'll need to register first. Visit our website to create your account, then come back here to get started!"
+    - Spanish: "👋 ¡Bienvenido! Me encantaría ayudarte con gastos y recordatorios, pero primero necesitas registrarte. Visita nuestro sitio web para crear tu cuenta, ¡luego regresa aquí para comenzar!"
+    - Portuguese: "👋 Bem-vindo! Adoraria ajudar você com despesas e lembretes, mas primeiro você precisa se registrar. Visite nosso site para criar sua conta, depois volte aqui para começar!"
+
+    Include appropriate emojis and be platform-specific if helpful.
+    Respond with just the registration message."""
+
+        try:
+            response = await self.router_llm.ainvoke([
+                SystemMessage(content=registration_prompt),
+                HumanMessage(content="Generate registration message")
+            ])
+            
+            return response.content.strip()
+            
+        except Exception as e:
+            # Fallback registration messages
+            if language == "es":
+                return "👋 ¡Hola! Necesitas registrarte primero para usar nuestro asistente. Visita nuestro sitio web para crear tu cuenta."
+            elif language == "pt":
+                return "👋 Olá! Você precisa se registrar primeiro para usar nosso assistente. Visite nosso site para criar sua conta."
+            elif language == "fr":
+                return "👋 Salut! Vous devez vous inscrire d'abord pour utiliser notre assistant. Visitez notre site web pour créer votre compte."
+            else:
+                return "👋 Hi! You need to register first to use our assistant. Please visit our website to create your account."
+
     async def _intelligent_routing(self, message: str, user_context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Use LLM to intelligently determine user intent and route to appropriate agent

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from decimal import Decimal
 from enum import Enum
+from datetime import datetime, timedelta
 import uuid
 
 class ReminderType(Enum):
@@ -210,6 +211,36 @@ class Reminder:
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
+    def is_overdue(self) -> bool:
+        """Check if reminder is overdue"""
+        if not self.due_datetime or self.is_completed:
+            return False
+        return datetime.now() > self.due_datetime
+
+    def get_formatted_summary(self) -> str:
+        """Get formatted summary for display"""
+        status_emoji = "✅" if self.is_completed else ("⚠️" if self.is_overdue() else "⏰")
+        priority_indicator = {"urgent": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}.get(self.priority, "🟡")
+        
+        due_text = ""
+        if self.due_datetime:
+            due_text = f" (Due: {self.due_datetime.strftime('%m/%d %H:%M')})"
+        
+        return f"{status_emoji} {priority_indicator} {self.title}{due_text}"
+
+    def get_status_text(self) -> str:
+        """Get status text for the reminder"""
+        if self.is_completed:
+            return "completed"
+        elif self.is_overdue():
+            return "overdue"
+        elif self.due_datetime and self.due_datetime.date() == datetime.now().date():
+            return "due_today"
+        elif self.due_datetime and self.due_datetime.date() == (datetime.now() + timedelta(days=1)).date():
+            return "due_tomorrow"
+        else:
+            return "pending"
+
 # Keep existing summary models but update references
 @dataclass
 class ExpenseSummary:
@@ -248,6 +279,11 @@ class ReminderSummary:
         if self.total_count == 0:
             return 0.0
         return (self.completed_count / self.total_count) * 100
+
+    def has_urgent_items(self) -> bool:
+        """Check if there are any urgent priority items"""
+        return self.by_priority.get('urgent', 0) > 0
+
 
 @dataclass
 class UserActivity:

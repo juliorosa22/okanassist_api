@@ -262,10 +262,8 @@ Handle multiple languages naturally. If parsing fails, set success=false and spe
         
         try:
             # Ensure we have a user
-            if user_context["is_new_user"]:
-                user_id = await self._create_user_from_context(user_context, original_message)
-            else:
-                user_id = user_context["user"].id
+            
+            user_id = user_context["user"].id
             
             # Create reminder object
             reminder = Reminder(
@@ -616,7 +614,4 @@ Respond with just the welcome message."""
         except Exception as e:
             return "👋 Welcome! You don't have any reminders yet. Try saying 'Remind me to call mom tomorrow at 3pm'."
     
-    async def _create_user_from_context(self, user_context: Dict[str, Any], original_message: str) -> str:
-        """Create new user from platform context"""
-        # Placeholder - implement user creation logic
-        return "temp_user_id"
+    

@@ -250,11 +250,8 @@ Be smart about incomplete information - if amount is missing, set success=false 
         Save the intelligently parsed expense to database
         """
         try:
-            # Ensure we have a user
-            if user_context["is_new_user"]:
-                user_id = await self._create_user_from_context(user_context, original_message)
-            else:
-                user_id = user_context["user"].id
+            
+            user_id = user_context["user"].id
             
             # Create expense object
             expense = Expense(
@@ -484,12 +481,6 @@ Respond with just the error message."""
         # Placeholder - implement with real currency API
         # For now, return same amount
         return amount
-    
-    async def _create_user_from_context(self, user_context: Dict[str, Any], original_message: str) -> str:
-        """Create new user from platform context"""
-        # Placeholder - implement user creation logic
-        # This would create User and UserPlatform records
-        return "temp_user_id"
     
     async def get_expense_summary(self, platform_type: str, platform_user_id: str, days: int = 30) -> str:
         """Get intelligent expense summary for user"""

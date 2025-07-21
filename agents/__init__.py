@@ -1,8 +1,7 @@
 """AI agents and tools"""
 
-from .expense_agent import ExpenseAgent
-from .reminder_agent import ReminderAgent
-from .orchestrator_agent import OrchestratorAgent
-from .router_agent import RouterAgent
+from .intelligent_expense_agent import IntelligentExpenseAgent
+from .intelligent_reminder_agent import IntelligentReminderAgent
+from .intelligent_orchestrator_agent import IntelligentOrchestratorAgent
 
-__all__ = ['ExpenseAgent','ReminderAgent', 'OrchestratorAgent', 'RouterAgent']
+__all__ = ['IntelligentExpenseAgent','IntelligentReminderAgent', 'IntelligentOrchestratorAgent']
