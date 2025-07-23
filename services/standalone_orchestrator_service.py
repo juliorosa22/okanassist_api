@@ -69,7 +69,7 @@ class StandaloneOrchestratorService:
         """Setup tools for intelligent agents"""
         try:
             # Import and setup expense tools
-            from agents.tools.intelligent_expense_tools import set_database as set_expense_db
+            from agents.expense_agent import set_database as set_expense_db
             set_expense_db(self.database)
             
             # Import and setup reminder tools  
