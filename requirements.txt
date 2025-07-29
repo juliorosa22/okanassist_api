@@ -5,3 +5,34 @@ langchain-core
 python-telegram-bot
 asyncpg
 python-dotenv==1.0.0
+
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+
+
+# Google OAuth
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+
+# LLM and AI (your existing dependencies)
+
+
+# HTTP requests
+httpx
+requests
+
+# Data validation
+pydantic
+
+# Core FastAPI and web framework
+fastapi
+uvicorn[standard]
+
+# Utilities
+python-dateutil
+
+# Development
+pytest
+pytest-asyncio

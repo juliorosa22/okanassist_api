@@ -1,0 +1,14 @@
+Now I need your help to develop the android/ios app that will communicate with the Whole system application. First i'll describe the main goals of the app and its development requirements. Dont generate any code yet, just give me a overview of the possible stack for the development
+
+Functions of the smartphone APP:
+1- The app should be able to handle new user registration and login
+2- The main goal of the app is to be capable of read user's phone notifications messages. 
+3- Function related to ExpenseAgent, here the app must have permission to read the content of notifications and identify the user's banks notifications to automate message sending to the expense handling to sent to the expenseAgent API.
+4- Function related to ReminderAgent, here the app must be listening for reminders previously configurated by the user. This will allow to recive notifications and alarms read from the ReminderAPI
+5- The user should be able to manually delete or update previously Expense and Reminders.
+
+Implementation requirements:
+1-The app must be minimalist with colors like dark blue, grey and white
+2-If possible use some OAuth API for user autentication and registration
+3- the Main information that each user should inform are: Name, phone number, email, and others revelant info, language, currency. The system must be able to infer the user timezone for accurated notifications reminder settings.
+4- Try to keep the app simple as possible , focus on the main functions.
