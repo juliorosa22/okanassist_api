@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import uuid
 import re
 import secrets
+import bcrypt
 import hashlib
 from dataclasses import dataclass
 
@@ -15,6 +16,7 @@ class RegistrationRequest:
     """User registration request data"""
     email: Optional[str] = None
     phone_number: Optional[str] = None
+    password: Optional[str] = None  # ADD PASSWORD FIELD
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     platform_type: str = "web_app"
@@ -49,7 +51,189 @@ class UserRegistrationService:
     def __init__(self, database: Database):
         self.database = database
         self.verification_tokens = {}  # In production, use Redis or database
+        # Security settings
+        self.min_password_length = 6
+        self.max_password_length = 128
+        self.require_password_complexity = True
     
+    def _validate_password(self, password: str) -> Dict[str, Any]:
+        """Validate password strength"""
+        if not password:
+            return {"valid": False, "error": "Password is required"}
+        
+        if len(password) < self.min_password_length:
+            return {"valid": False, "error": f"Password must be at least {self.min_password_length} characters"}
+        
+        if len(password) > self.max_password_length:
+            return {"valid": False, "error": f"Password must be less than {self.max_password_length} characters"}
+        
+        if self.require_password_complexity:
+            if not re.search(r'[A-Za-z]', password):
+                return {"valid": False, "error": "Password must contain at least one letter"}
+            
+            if not re.search(r'\d', password):
+                return {"valid": False, "error": "Password must contain at least one number"}
+        
+        return {"valid": True}
+    
+
+    def _validate_password(self, password: str) -> Dict[str, Any]:
+        """Validate password strength"""
+        if not password:
+            return {"valid": False, "error": "Password is required"}
+        
+        if len(password) < self.min_password_length:
+            return {"valid": False, "error": f"Password must be at least {self.min_password_length} characters"}
+        
+        if len(password) > self.max_password_length:
+            return {"valid": False, "error": f"Password must be less than {self.max_password_length} characters"}
+        
+        if self.require_password_complexity:
+            if not re.search(r'[A-Za-z]', password):
+                return {"valid": False, "error": "Password must contain at least one letter"}
+            
+            if not re.search(r'\d', password):
+                return {"valid": False, "error": "Password must contain at least one number"}
+        
+        return {"valid": True}
+    
+    def _validate_registration_request(self, request: RegistrationRequest) -> Dict[str, Any]:
+        """Enhanced validation with password checking"""
+        
+        # Must have either email or phone number
+        if not request.email and not request.phone_number:
+            return {
+                "valid": False,
+                "error": "Either email or phone number is required"
+            }
+        
+        # Validate email format
+        if request.email and not self._is_valid_email(request.email):
+            return {
+                "valid": False,
+                "error": "Invalid email format"
+            }
+        
+        # Validate phone number format
+        if request.phone_number and not self._is_valid_phone(request.phone_number):
+            return {
+                "valid": False,
+                "error": "Invalid phone number format"
+            }
+        
+        # Validate password (if provided)
+        if request.password:
+            password_validation = self._validate_password(request.password)
+            if not password_validation["valid"]:
+                return password_validation
+        
+        # Validate platform type
+        valid_platforms = [p.value for p in PlatformType]
+        if request.platform_type not in valid_platforms:
+            return {
+                "valid": False,
+                "error": f"Invalid platform type. Must be one of: {valid_platforms}"
+            }
+        
+        return {"valid": True}
+    
+    async def _create_new_user(self, request: RegistrationRequest) -> Tuple[User, UserPlatform]:
+        """Create new user with password handling"""
+        
+        # Create user
+        user = User(
+            id=str(uuid.uuid4()),
+            email=request.email,
+            phone_number=request.phone_number,
+            first_name=request.first_name,
+            last_name=request.last_name,
+            country_code=request.country_code,
+            timezone=request.timezone,
+            language=request.language,
+            default_currency=request.default_currency,
+            subscription_status=SubscriptionStatus.FREE.value,
+            is_active=True,
+            email_verified=False,
+            phone_verified=False,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        
+        # Set password if provided
+        if request.password:
+            user.set_password(request.password)
+        
+        # Create platform
+        platform = UserPlatform(
+            user_id=user.id,
+            platform_type=request.platform_type,
+            platform_user_id=request.platform_user_id or str(uuid.uuid4()),
+            platform_username=request.platform_username,
+            is_active=True,
+            is_primary=True,
+            notification_enabled=True,
+            device_info=request.device_info,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
+        
+        # Save to database
+        saved_user = await self.database.create_user(user)
+        saved_platform = await self.database.create_user_platform(platform)
+        
+        return saved_user, saved_platform
+    
+    async def authenticate_user(self, email: str, password: str) -> Dict[str, Any]:
+        """Authenticate user with email and password"""
+        try:
+            # Get user by email
+            user = await self.database.get_user_by_email(email)
+            
+            if not user:
+                return {
+                    "success": False,
+                    "error": "Invalid email or password",
+                    "user": None
+                }
+            
+            # Check if account is locked
+            if user.is_account_locked():
+                return {
+                    "success": False,
+                    "error": "Account temporarily locked due to failed login attempts",
+                    "user": None
+                }
+            
+            # Check password
+            if not user.check_password(password):
+                # Increment failed login attempts
+                user.increment_failed_login()
+                await self.database.update_user(user)
+                
+                return {
+                    "success": False,
+                    "error": "Invalid email or password",
+                    "user": None
+                }
+            
+            # Successful login - reset failed attempts
+            user.reset_failed_login()
+            user.last_login_at = datetime.now()
+            await self.database.update_user(user)
+            
+            return {
+                "success": True,
+                "message": "Authentication successful",
+                "user": user
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "Authentication failed",
+                "user": None
+            }
+
     async def register_user(self, request: RegistrationRequest) -> RegistrationResult:
         """
         Register a new user with comprehensive validation and setup
@@ -433,39 +617,7 @@ class UserRegistrationService:
     # PRIVATE HELPER METHODS
     # ============================================================================
     
-    def _validate_registration_request(self, request: RegistrationRequest) -> Dict[str, Any]:
-        """Validate registration request"""
-        
-        # Must have either email or phone number
-        if not request.email and not request.phone_number:
-            return {
-                "valid": False,
-                "error": "Either email or phone number is required"
-            }
-        
-        # Validate email format
-        if request.email and not self._is_valid_email(request.email):
-            return {
-                "valid": False,
-                "error": "Invalid email format"
-            }
-        
-        # Validate phone number format
-        if request.phone_number and not self._is_valid_phone(request.phone_number):
-            return {
-                "valid": False,
-                "error": "Invalid phone number format"
-            }
-        
-        # Validate platform type
-        valid_platforms = [p.value for p in PlatformType]
-        if request.platform_type not in valid_platforms:
-            return {
-                "valid": False,
-                "error": f"Invalid platform type. Must be one of: {valid_platforms}"
-            }
-        
-        return {"valid": True}
+    
     
     def _is_valid_email(self, email: str) -> bool:
         """Validate email format"""
@@ -527,47 +679,7 @@ class UserRegistrationService:
             message="An account with this email/phone already exists"
         )
     
-    async def _create_new_user(self, request: RegistrationRequest) -> Tuple[User, UserPlatform]:
-        """Create new user and platform"""
-        
-        # Create user
-        user = User(
-            id=str(uuid.uuid4()),
-            email=request.email,
-            phone_number=request.phone_number,
-            first_name=request.first_name,
-            last_name=request.last_name,
-            country_code=request.country_code,
-            timezone=request.timezone,
-            language=request.language,
-            default_currency=request.default_currency,
-            subscription_status=SubscriptionStatus.FREE.value,
-            is_active=True,
-            email_verified=False,
-            phone_verified=False,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        # Create platform
-        platform = UserPlatform(
-            user_id=user.id,
-            platform_type=request.platform_type,
-            platform_user_id=request.platform_user_id or str(uuid.uuid4()),
-            platform_username=request.platform_username,
-            is_active=True,
-            is_primary=True,  # First platform is primary
-            notification_enabled=True,
-            device_info=request.device_info,
-            created_at=datetime.now(),
-            updated_at=datetime.now()
-        )
-        
-        # Save to database
-        saved_user = await self.database.create_user(user)
-        saved_platform = await self.database.create_user_platform(platform)
-        
-        return saved_user, saved_platform
+    
     
     async def _create_verification_token(self, user_id: str, verification_type: str, value: str) -> str:
         """Create verification token"""

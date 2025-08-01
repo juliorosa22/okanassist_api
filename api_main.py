@@ -4,13 +4,15 @@ from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
-import uvicorn
-import os
+import os,uvicorn
+import uuid,secrets,jwt
 from dotenv import load_dotenv
 from typing import Optional
-import jwt
-from datetime import datetime, timedelta
 
+from datetime import datetime, timedelta
+import bcrypt
+from pydantic import BaseModel, EmailStr, field_validator
+import re
 # Load environment variables
 load_dotenv()
 
@@ -18,8 +20,7 @@ load_dotenv()
 from config import Config
 from core.database import Database
 from core.models import User
-from services.user_registration import UserRegistrationService
-
+from services.user_registration import UserRegistrationService, RegistrationRequest
 # Global instances
 database = None
 registration_service = None
@@ -82,13 +83,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# JWT utility functions
-def create_access_token(user_id: str) -> str:
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+# JWT utility functions with enhanced security
+def create_access_token(user_id: str, email: str) -> str:
     payload = {
         "user_id": user_id,
+        "email": email,
         "exp": datetime.utcnow() + timedelta(hours=int(os.getenv("JWT_EXPIRATION_HOURS", 24))),
         "iat": datetime.utcnow(),
-        "type": "access"
+        "type": "access",
+        "jti": str(uuid.uuid4())  # JWT ID for token tracking
     }
     return jwt.encode(payload, os.getenv("JWT_SECRET"), algorithm=os.getenv("JWT_ALGORITHM", "HS256"))
 
@@ -97,9 +109,11 @@ def create_refresh_token(user_id: str) -> str:
         "user_id": user_id,
         "exp": datetime.utcnow() + timedelta(days=int(os.getenv("REFRESH_TOKEN_DAYS", 30))),
         "iat": datetime.utcnow(),
-        "type": "refresh"
+        "type": "refresh",
+        "jti": str(uuid.uuid4())
     }
     return jwt.encode(payload, os.getenv("JWT_SECRET"), algorithm=os.getenv("JWT_ALGORITHM", "HS256"))
+
 
 def verify_token(token: str) -> dict:
     try:
@@ -117,7 +131,7 @@ def verify_token(token: str) -> dict:
         )
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
-    """Get current authenticated user"""
+    """Get current authenticated user with enhanced validation"""
     payload = verify_token(credentials.credentials)
     user_id = payload.get("user_id")
     
@@ -132,6 +146,18 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is deactivated"
+        )
+    
+    if user.is_account_locked():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is temporarily locked"
         )
     
     return user
@@ -167,16 +193,73 @@ from typing import Optional
 import hashlib
 
 class RegisterRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
     name: str
     phone: Optional[str] = None
     currency: str = "USD"
     language: str = "en"
+    
+    @field_validator('password')
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        if len(v) > 128:
+            raise ValueError('Password must be less than 128 characters long')
+        if not re.search(r'[A-Za-z]', v):
+            raise ValueError('Password must contain at least one letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        return v
+    
+    @field_validator('name')
+    def validate_name(cls, v):
+        if len(v.strip()) < 2:
+            raise ValueError('Name must be at least 2 characters long')
+        if len(v) > 100:
+            raise ValueError('Name must be less than 100 characters long')
+        return v.strip()
+    
+    @field_validator('currency')
+    def validate_currency(cls, v):
+        valid_currencies = ['USD', 'EUR', 'BRL', 'GBP', 'JPY', 'CAD', 'AUD']
+        if v not in valid_currencies:
+            raise ValueError(f'Currency must be one of: {", ".join(valid_currencies)}')
+        return v
+    
+    @field_validator('language')
+    def validate_language(cls, v):
+        valid_languages = ['en', 'es', 'pt', 'fr', 'de']
+        if v not in valid_languages:
+            raise ValueError(f'Language must be one of: {", ".join(valid_languages)}')
+        return v
 
 class LoginRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
+    
+    @field_validator('password')
+    def validate_password(cls, v):
+        if len(v) < 1:
+            raise ValueError('Password is required')
+        return v
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+    
+    @field_validator('new_password')
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('Password must be at least 6 characters long')
+        if not re.search(r'[A-Za-z]', v):
+            raise ValueError('Password must contain at least one letter')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain at least one number')
+        return v
 
 class GoogleLoginRequest(BaseModel):
     google_token: str
@@ -189,9 +272,47 @@ def verify_password(password: str, hashed: str) -> bool:
     """Verify password"""
     return hashlib.sha256(password.encode()).hexdigest() == hashed
 
+#Rate limiting decorator
+from functools import wraps
+from time import time
+
+# Simple in-memory rate limiting (use Redis in production)
+rate_limit_storage = {}
+
+def rate_limit(max_attempts: int, window_seconds: int):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Get client IP (simplified - use proper IP extraction in production)
+            client_id = "default"  # In production, extract from request
+            
+            current_time = time()
+            
+            # Clean old entries
+            rate_limit_storage[client_id] = [
+                timestamp for timestamp in rate_limit_storage.get(client_id, [])
+                if current_time - timestamp < window_seconds
+            ]
+            
+            # Check rate limit
+            if len(rate_limit_storage.get(client_id, [])) >= max_attempts:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Too many attempts. Try again in {window_seconds} seconds."
+                )
+            
+            # Record this attempt
+            rate_limit_storage.setdefault(client_id, []).append(current_time)
+            
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
 @app.post("/api/auth/register")
+@rate_limit(max_attempts=5, window_seconds=300)  # 5 attempts per 5 minutes
 async def register_user(request: RegisterRequest):
-    """Register a new user"""
+    """Enhanced user registration with security"""
     try:
         # Check if user exists
         existing_user = await database.get_user_by_email(request.email)
@@ -201,13 +322,10 @@ async def register_user(request: RegisterRequest):
                 detail="User with this email already exists"
             )
         
-        # Hash password
-        hashed_password = hash_password(request.password)
-        
-        # Create user via registration service
-        from services.user_registration import RegistrationRequest
+        # Create registration request
         reg_request = RegistrationRequest(
             email=request.email,
+            password=request.password,  # Will be hashed in service
             first_name=request.name.split()[0] if request.name else "",
             last_name=" ".join(request.name.split()[1:]) if len(request.name.split()) > 1 else "",
             phone_number=request.phone,
@@ -219,11 +337,8 @@ async def register_user(request: RegisterRequest):
         result = await registration_service.register_user(reg_request)
         
         if result.success:
-            # Store password hash (you'll need to add this to your User model)
-            # For now, we'll store it as part of user creation
-            
             # Create tokens
-            access_token = create_access_token(result.user.id)
+            access_token = create_access_token(result.user.id, result.user.email)
             refresh_token = create_refresh_token(result.user.id)
             
             return {
@@ -234,14 +349,16 @@ async def register_user(request: RegisterRequest):
                     "email": result.user.email,
                     "name": result.user.get_display_name(),
                     "currency": result.user.default_currency,
-                    "language": result.user.language
+                    "language": result.user.language,
+                    "email_verified": result.user.email_verified
                 },
                 "tokens": {
                     "access_token": access_token,
                     "refresh_token": refresh_token,
                     "token_type": "bearer",
                     "expires_in": int(os.getenv("JWT_EXPIRATION_HOURS", 24)) * 3600
-                }
+                },
+                "requires_verification": result.requires_verification
             }
         else:
             raise HTTPException(
@@ -259,30 +376,26 @@ async def register_user(request: RegisterRequest):
         )
 
 @app.post("/api/auth/login")
+@rate_limit(max_attempts=5, window_seconds=900)  # 5 attempts per 15 minutes
 async def login_user(request: LoginRequest):
-    """Login user with email and password"""
+    """Enhanced login with security"""
     try:
-        # Get user by email
-        user = await database.get_user_by_email(request.email)
+        # Authenticate user
+        auth_result = await registration_service.authenticate_user(
+            request.email, request.password
+        )
         
-        if not user:
+        if not auth_result["success"]:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password"
+                detail=auth_result["error"]
             )
         
-        # For now, we'll use a simple password check
-        # In production, you should store hashed passwords
-        if request.password != "demo123" and request.email != "demo@test.com":
-            # Implement proper password verification here
-            pass
+        user = auth_result["user"]
         
         # Create tokens
-        access_token = create_access_token(user.id)
+        access_token = create_access_token(user.id, user.email)
         refresh_token = create_refresh_token(user.id)
-        
-        # Update last login
-        await database.update_user_last_login(user.id)
         
         return {
             "success": True,
@@ -292,7 +405,8 @@ async def login_user(request: LoginRequest):
                 "email": user.email,
                 "name": user.get_display_name(),
                 "currency": user.default_currency,
-                "language": user.language
+                "language": user.language,
+                "email_verified": user.email_verified
             },
             "tokens": {
                 "access_token": access_token,
@@ -310,6 +424,74 @@ async def login_user(request: LoginRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Login failed"
         )
+    
+@app.post("/api/auth/password-reset")
+@rate_limit(max_attempts=3, window_seconds=300)  # 3 attempts per 5 minutes
+async def request_password_reset(request: PasswordResetRequest):
+    """Request password reset"""
+    try:
+        # Get user
+        user = await database.get_user_by_email(request.email)
+        
+        # Always return success to prevent email enumeration
+        if user:
+            # Generate reset token
+            reset_token = secrets.token_urlsafe(32)
+            user.password_reset_token = reset_token
+            user.password_reset_expires = datetime.now() + timedelta(hours=1)
+            
+            await database.update_user(user)
+            
+            # In production, send email with reset link
+            print(f"Password reset token for {request.email}: {reset_token}")
+        
+        return {
+            "success": True,
+            "message": "If the email exists, you will receive password reset instructions"
+        }
+    
+    except Exception as e:
+        print(f"Password reset error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset request failed"
+        )
+
+@app.post("/api/auth/password-reset-confirm")
+async def confirm_password_reset(request: PasswordResetConfirm):
+    """Confirm password reset with token"""
+    try:
+        # Find user with valid reset token
+        user = await database.get_user_by_password_reset_token(request.token)
+        
+        if not user or not user.password_reset_expires or datetime.now() > user.password_reset_expires:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired reset token"
+            )
+        
+        # Update password
+        user.set_password(request.new_password)
+        user.password_reset_token = None
+        user.password_reset_expires = None
+        user.reset_failed_login()  # Reset any account locks
+        
+        await database.update_user(user)
+        
+        return {
+            "success": True,
+            "message": "Password updated successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Password reset confirm error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Password reset confirmation failed"
+        )
+
 
 @app.post("/api/auth/google")
 async def google_login(request: GoogleLoginRequest):

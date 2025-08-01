@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from config import Config
 from core.database import Database
-from agents.intelligent_orchestrator_agent import IntelligentOrchestratorAgent
+from agents.orchestrator_agent import OrchestratorAgent
 from services.standalone_orchestrator_service import StandaloneOrchestratorService
 from services.user_registration import UserRegistrationService
 
@@ -39,7 +39,7 @@ class TestBase:
         
         # Orchestrator  
         print("🧠 Setting up orchestrator...")
-        self.orchestrator = IntelligentOrchestratorAgent(
+        self.orchestrator = OrchestratorAgent(
             self.config.GROQ_API_KEY, 
             self.database
         )
@@ -135,7 +135,7 @@ class PersonalAssistantApp:
         
         # Initialize intelligent orchestrator
         print("🧠 Setting up intelligent AI orchestrator...")
-        self.orchestrator = IntelligentOrchestratorAgent(
+        self.orchestrator = OrchestratorAgent(
             groq_api_key=self.config.GROQ_API_KEY,
             database=self.database
         )

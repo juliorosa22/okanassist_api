@@ -55,6 +55,11 @@ class Database:
                     updated_at TIMESTAMP DEFAULT NOW(),
                     last_login_at TIMESTAMP
                 );
+                ALTER TABLE users ADD COLUMN password_hash TEXT;
+                ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;
+                ALTER TABLE users ADD COLUMN account_locked_until TIMESTAMP;
+                ALTER TABLE users ADD COLUMN password_reset_token TEXT;
+                ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP;
                 
                 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
                 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number);

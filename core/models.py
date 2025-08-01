@@ -6,7 +6,7 @@ from decimal import Decimal
 from enum import Enum
 from datetime import datetime, timedelta
 import uuid
-
+import bcrypt
 class ReminderType(Enum):
     """Reminder type enumeration"""
     TASK = "task"
@@ -45,6 +45,9 @@ class User:
     phone_number: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    # ADD PASSWORD FIELD
+    password_hash: Optional[str] = None  # Store bcrypt hash
+
     country_code: str = "US"  # ISO country code
     timezone: str = "UTC"  # Timezone identifier
     language: str = "en"  # Language preference
@@ -61,7 +64,51 @@ class User:
     notification_preferences: Dict[str, Any] = field(default_factory=dict)
     expense_categories_custom: List[str] = field(default_factory=list)
     default_currency: str = "USD"
+
+    # Security fields
+    failed_login_attempts: int = 0
+    account_locked_until: Optional[datetime] = None
+    password_reset_token: Optional[str] = None
+    password_reset_expires: Optional[datetime] = None
     
+
+    def set_password(self, password: str) -> None:
+        """Set password using bcrypt hash"""
+        if not password or len(password) < 6:
+            raise ValueError("Password must be at least 6 characters")
+        
+        salt = bcrypt.gensalt()
+        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+    
+    def check_password(self, password: str) -> bool:
+        """Check password against stored hash"""
+        if not self.password_hash or not password:
+            return False
+        
+        return bcrypt.checkpw(
+            password.encode('utf-8'), 
+            self.password_hash.encode('utf-8')
+        )
+    
+    def is_account_locked(self) -> bool:
+        """Check if account is temporarily locked"""
+        if not self.account_locked_until:
+            return False
+        return datetime.now() < self.account_locked_until
+    
+    def increment_failed_login(self) -> None:
+        """Increment failed login attempts and lock if necessary"""
+        self.failed_login_attempts += 1
+        
+        # Lock account after 5 failed attempts for 30 minutes
+        if self.failed_login_attempts >= 5:
+            self.account_locked_until = datetime.now() + timedelta(minutes=30)
+    
+    def reset_failed_login(self) -> None:
+        """Reset failed login attempts after successful login"""
+        self.failed_login_attempts = 0
+        self.account_locked_until = None
+
     def get_display_name(self) -> str:
         """Get user's display name"""
         if self.first_name:
