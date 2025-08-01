@@ -1,12 +1,10 @@
-# core/models.py
+# core/models.py - Supabase integrated version
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from decimal import Decimal
 from enum import Enum
-from datetime import datetime, timedelta
-import uuid
-import bcrypt
+
 class ReminderType(Enum):
     """Reminder type enumeration"""
     TASK = "task"
@@ -29,162 +27,34 @@ class PlatformType(Enum):
     MOBILE_APP = "mobile_app"
     WEB_APP = "web_app"
 
-class SubscriptionStatus(Enum):
-    """Subscription status enumeration"""
-    FREE = "free"
-    PREMIUM = "premium"
-    ENTERPRISE = "enterprise"
-    TRIAL = "trial"
-    SUSPENDED = "suspended"
+class TransactionType(Enum):
+    """Transaction type enumeration"""
+    EXPENSE = "expense"
+    INCOME = "income"
 
 @dataclass
-class User:
-    """Main user model - platform agnostic"""
-    id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    # ADD PASSWORD FIELD
-    password_hash: Optional[str] = None  # Store bcrypt hash
-
-    country_code: str = "US"  # ISO country code
-    timezone: str = "UTC"  # Timezone identifier
-    language: str = "en"  # Language preference
-    subscription_status: str = SubscriptionStatus.FREE.value
-    subscription_expires_at: Optional[datetime] = None
-    is_active: bool = True
-    email_verified: bool = False
-    phone_verified: bool = False
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    last_login_at: Optional[datetime] = None
-    
-    # Preferences
-    notification_preferences: Dict[str, Any] = field(default_factory=dict)
-    expense_categories_custom: List[str] = field(default_factory=list)
-    default_currency: str = "USD"
-
-    # Security fields
-    failed_login_attempts: int = 0
-    account_locked_until: Optional[datetime] = None
-    password_reset_token: Optional[str] = None
-    password_reset_expires: Optional[datetime] = None
-    
-
-    def set_password(self, password: str) -> None:
-        """Set password using bcrypt hash"""
-        if not password or len(password) < 6:
-            raise ValueError("Password must be at least 6 characters")
-        
-        salt = bcrypt.gensalt()
-        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
-    
-    def check_password(self, password: str) -> bool:
-        """Check password against stored hash"""
-        if not self.password_hash or not password:
-            return False
-        
-        return bcrypt.checkpw(
-            password.encode('utf-8'), 
-            self.password_hash.encode('utf-8')
-        )
-    
-    def is_account_locked(self) -> bool:
-        """Check if account is temporarily locked"""
-        if not self.account_locked_until:
-            return False
-        return datetime.now() < self.account_locked_until
-    
-    def increment_failed_login(self) -> None:
-        """Increment failed login attempts and lock if necessary"""
-        self.failed_login_attempts += 1
-        
-        # Lock account after 5 failed attempts for 30 minutes
-        if self.failed_login_attempts >= 5:
-            self.account_locked_until = datetime.now() + timedelta(minutes=30)
-    
-    def reset_failed_login(self) -> None:
-        """Reset failed login attempts after successful login"""
-        self.failed_login_attempts = 0
-        self.account_locked_until = None
-
-    def get_display_name(self) -> str:
-        """Get user's display name"""
-        if self.first_name:
-            return f"{self.first_name} {self.last_name or ''}".strip()
-        return self.email or self.id[:8]
-    
-    def is_premium(self) -> bool:
-        """Check if user has premium subscription"""
-        return self.subscription_status in [SubscriptionStatus.PREMIUM.value, SubscriptionStatus.ENTERPRISE.value]
-    
-    def is_subscription_active(self) -> bool:
-        """Check if subscription is currently active"""
-        if not self.subscription_expires_at:
-            return self.subscription_status == SubscriptionStatus.FREE.value
-        return datetime.now() < self.subscription_expires_at
-
-@dataclass
-class UserPlatform:
-    """Links users to specific platforms (Telegram, WhatsApp, App, etc.)"""
-    id: Optional[int] = None
-    user_id: str = ""  # Foreign key to User.id
-    platform_type: str = PlatformType.TELEGRAM.value
-    platform_user_id: str = ""  # telegram_id, whatsapp_number, device_id, etc.
-    platform_username: Optional[str] = None  # @username for telegram, etc.
-    is_active: bool = True
-    is_primary: bool = False  # Primary platform for notifications
-    
-    # Platform-specific settings
-    notification_enabled: bool = True
-    notification_settings: Dict[str, Any] = field(default_factory=dict)
-    
-    # Metadata
-    device_info: Optional[Dict[str, str]] = field(default_factory=dict)  # For mobile apps
-    last_activity_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for easy serialization"""
-        return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'platform_type': self.platform_type,
-            'platform_user_id': self.platform_user_id,
-            'platform_username': self.platform_username,
-            'is_active': self.is_active,
-            'is_primary': self.is_primary,
-            'notification_enabled': self.notification_enabled,
-            'notification_settings': self.notification_settings,
-            'device_info': self.device_info,
-            'last_activity_at': self.last_activity_at.isoformat() if self.last_activity_at else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
-        }
-
-@dataclass
-class Expense:
-    """Expense model - now linked to User.id instead of telegram_id"""
-    user_id: str  # Foreign key to User.id (changed from user_telegram_id)
+class Transaction:
+    """Transaction model - handles both expenses and income"""
+    user_id: str  # Supabase auth.users.id (UUID)
     amount: Decimal
     description: str
     category: str
+    transaction_type: str  # 'expense' or 'income'
     original_message: str
-    source_platform: str = PlatformType.TELEGRAM.value  # Which platform created this
+    source_platform: str = PlatformType.WEB_APP.value
     merchant: Optional[str] = None
     date: Optional[datetime] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
-    # Enhanced fields for mobile app integration
+    # Enhanced fields
     receipt_image_url: Optional[str] = None
     location: Optional[Dict[str, float]] = None  # {'lat': x, 'lng': y}
     is_recurring: bool = False
     recurring_pattern: Optional[str] = None
     tags: List[str] = field(default_factory=list)
-    confidence_score: Optional[float] = None  # For ML-parsed expenses
+    confidence_score: Optional[float] = None  # For ML-parsed transactions
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for easy serialization"""
@@ -194,6 +64,7 @@ class Expense:
             'amount': float(self.amount),
             'description': self.description,
             'category': self.category,
+            'transaction_type': self.transaction_type,
             'original_message': self.original_message,
             'source_platform': self.source_platform,
             'merchant': self.merchant,
@@ -204,16 +75,25 @@ class Expense:
             'recurring_pattern': self.recurring_pattern,
             'tags': self.tags,
             'confidence_score': self.confidence_score,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+    
+    def is_expense(self) -> bool:
+        """Check if this is an expense"""
+        return self.transaction_type == TransactionType.EXPENSE.value
+    
+    def is_income(self) -> bool:
+        """Check if this is income"""
+        return self.transaction_type == TransactionType.INCOME.value
 
 @dataclass
 class Reminder:
-    """Reminder model - now linked to User.id instead of telegram_id"""
-    user_id: str  # Foreign key to User.id (changed from user_telegram_id)
+    """Reminder model - updated for Supabase"""
+    user_id: str  # Supabase auth.users.id (UUID)
     title: str
     description: str
-    source_platform: str = PlatformType.TELEGRAM.value  # Which platform created this
+    source_platform: str = PlatformType.WEB_APP.value
     due_datetime: Optional[datetime] = None
     reminder_type: str = ReminderType.GENERAL.value
     priority: str = Priority.MEDIUM.value
@@ -228,10 +108,10 @@ class Reminder:
     completed_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
-    # Enhanced fields for mobile app
-    location_reminder: Optional[Dict[str, Any]] = None  # Location-based reminders
-    attachments: List[str] = field(default_factory=list)  # File URLs
-    assigned_to_platforms: List[str] = field(default_factory=list)  # Specific platform notifications
+    # Enhanced fields
+    location_reminder: Optional[Dict[str, Any]] = None
+    attachments: List[str] = field(default_factory=list)
+    assigned_to_platforms: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for easy serialization"""
@@ -288,26 +168,42 @@ class Reminder:
         else:
             return "pending"
 
-# Keep existing summary models but update references
 @dataclass
-class ExpenseSummary:
-    """Summary of user expenses"""
-    total_amount: Decimal
-    total_count: int
-    average_amount: Decimal
-    categories: list
+class TransactionSummary:
+    """Summary of user transactions (expenses + income)"""
+    total_expenses: Decimal
+    total_income: Decimal
+    net_income: Decimal  # income - expenses
+    expense_count: int
+    income_count: int
+    average_expense: Decimal
+    average_income: Decimal
+    expense_categories: List[Dict[str, Any]]
+    income_categories: List[Dict[str, Any]]
     period_days: int
     
-    def get_formatted_total(self) -> str:
-        return f"${self.total_amount:.2f}"
+    def get_formatted_net_income(self) -> str:
+        """Get formatted net income with appropriate sign"""
+        if self.net_income >= 0:
+            return f"+${self.net_income:.2f}"
+        else:
+            return f"-${abs(self.net_income):.2f}"
     
-    def get_formatted_average(self) -> str:
-        return f"${self.average_amount:.2f}"
-    
-    def get_top_category(self) -> Optional[str]:
-        if not self.categories:
+    def get_top_expense_category(self) -> Optional[str]:
+        """Get top expense category by amount"""
+        if not self.expense_categories:
             return None
-        return max(self.categories, key=lambda x: x.get('total', 0))['category']
+        return max(self.expense_categories, key=lambda x: x.get('total', 0))['category']
+    
+    def get_top_income_category(self) -> Optional[str]:
+        """Get top income category by amount"""
+        if not self.income_categories:
+            return None
+        return max(self.income_categories, key=lambda x: x.get('total', 0))['category']
+    
+    def is_profitable(self) -> bool:
+        """Check if user has positive cash flow"""
+        return self.net_income > 0
 
 @dataclass 
 class ReminderSummary:
@@ -331,58 +227,83 @@ class ReminderSummary:
         """Check if there are any urgent priority items"""
         return self.by_priority.get('urgent', 0) > 0
 
-
 @dataclass
 class UserActivity:
-    """Overall user activity summary"""
-    user_id: str  # Changed from user_telegram_id
-    expense_summary: Optional[ExpenseSummary] = None
+    """Overall user activity summary (Supabase version)"""
+    user_id: str  # Supabase auth.users.id
+    transaction_summary: Optional[TransactionSummary] = None
     reminder_summary: Optional[ReminderSummary] = None
-    last_expense_date: Optional[datetime] = None
+    last_transaction_date: Optional[datetime] = None
     last_reminder_date: Optional[datetime] = None
     total_interactions: int = 0
-    active_platforms: List[str] = field(default_factory=list)
     
     def is_active_user(self, days: int = 7) -> bool:
-        from datetime import timedelta
         cutoff = datetime.now() - timedelta(days=days)
         return (
-            (self.last_expense_date and self.last_expense_date > cutoff) or
+            (self.last_transaction_date and self.last_transaction_date > cutoff) or
             (self.last_reminder_date and self.last_reminder_date > cutoff)
         )
 
-# Utility functions for model operations
-def create_user_from_platform_data(platform_type: str, platform_data: Dict[str, Any]) -> tuple[User, UserPlatform]:
-    """Create User and UserPlatform from platform-specific data"""
-    user = User(
-        first_name=platform_data.get('first_name'),
-        last_name=platform_data.get('last_name'),
-        email=platform_data.get('email'),
-        phone_number=platform_data.get('phone_number'),
-        created_at=datetime.now(),
-        updated_at=datetime.now()
-    )
-    
-    platform = UserPlatform(
-        user_id=user.id,
-        platform_type=platform_type,
-        platform_user_id=str(platform_data.get('platform_user_id', '')),
-        platform_username=platform_data.get('username'),
-        is_primary=True,  # First platform is primary
-        created_at=datetime.now(),
-        updated_at=datetime.now()
-    )
-    
-    return user, platform
+# Transaction categories for intelligent classification
+TRANSACTION_CATEGORIES = {
+    # Expense categories
+    "expense": {
+        "Food & Dining": ["restaurant", "coffee", "lunch", "dinner", "food", "grocery", "takeout"],
+        "Transportation": ["uber", "taxi", "gas", "fuel", "parking", "bus", "train", "flight"],
+        "Shopping": ["amazon", "store", "clothes", "electronics", "book", "shopping"],
+        "Entertainment": ["movie", "game", "concert", "netflix", "spotify", "streaming"],
+        "Utilities": ["electric", "water", "internet", "phone", "rent", "mortgage"],
+        "Healthcare": ["doctor", "hospital", "pharmacy", "medicine", "dentist"],
+        "Travel": ["hotel", "airbnb", "vacation", "trip", "booking"],
+        "Education": ["school", "course", "tuition", "book", "training"],
+        "Other": []
+    },
+    # Income categories
+    "income": {
+        "Salary": ["salary", "paycheck", "wage", "income", "pay"],
+        "Freelance": ["freelance", "contract", "consulting", "gig", "project"],
+        "Business": ["business", "revenue", "sales", "profit", "commission"],
+        "Investment": ["dividend", "interest", "stock", "crypto", "investment", "return"],
+        "Gift": ["gift", "bonus", "present", "reward", "prize"],
+        "Refund": ["refund", "return", "reimbursement", "cashback"],
+        "Rental": ["rent", "rental", "lease", "property"],
+        "Other": []
+    }
+}
 
-def validate_user_data(data: Dict[str, Any]) -> bool:
-    """Validate user data"""
-    if not data.get('email') and not data.get('phone_number'):
-        return False  # Must have at least one contact method
+def categorize_transaction(description: str, transaction_type: str) -> str:
+    """
+    Categorize transaction based on description keywords and type
     
-    return True
+    Args:
+        description: Transaction description text
+        transaction_type: 'expense' or 'income'
+        
+    Returns:
+        Category name as string
+    """
+    if not description or transaction_type not in TRANSACTION_CATEGORIES:
+        return "Other"
+    
+    description_lower = description.lower()
+    categories = TRANSACTION_CATEGORIES[transaction_type]
+    
+    # Score each category based on keyword matches
+    category_scores = {}
+    for category, keywords in categories.items():
+        if keywords:  # Skip empty keyword lists (like "Other")
+            score = sum(1 for keyword in keywords if keyword in description_lower)
+            if score > 0:
+                category_scores[category] = score
+    
+    # Return category with highest score or "Other" if no matches
+    if category_scores:
+        return max(category_scores.keys(), key=lambda k: category_scores[k])
+    
+    return "Other"
 
-def validate_platform_data(data: Dict[str, Any]) -> bool:
-    """Validate platform data"""
-    required_fields = ['user_id', 'platform_type', 'platform_user_id']
-    return all(field in data and data[field] for field in required_fields)
+def get_all_categories(transaction_type: str) -> List[str]:
+    """Get list of all available categories for a transaction type"""
+    if transaction_type in TRANSACTION_CATEGORIES:
+        return list(TRANSACTION_CATEGORIES[transaction_type].keys())
+    return ["Other"]

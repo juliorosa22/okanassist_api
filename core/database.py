@@ -1,4 +1,4 @@
-# core/database.py
+# core/database.py - Supabase integrated version
 import asyncpg
 import json
 from typing import List, Optional, Dict, Any, Tuple
@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from .models import (
-    User, UserPlatform, Expense, ExpenseSummary, Reminder, ReminderSummary, 
-    UserActivity, ReminderType, Priority, PlatformType, SubscriptionStatus
+    Transaction, TransactionSummary, Reminder, ReminderSummary, 
+    UserActivity, ReminderType, Priority, TransactionType
 )
 
 class Database:
-    """Clean database manager with multi-platform user support"""
+    """Database manager integrated with Supabase Auth"""
     
     def __init__(self, database_url: str):
         self.database_url = database_url
@@ -21,7 +21,7 @@ class Database:
         """Initialize database connection"""
         self.pool = await asyncpg.create_pool(self.database_url)
         await self._create_tables()
-        print("✅ Database connected with multi-platform support")
+        print("✅ Database connected with Supabase Auth integration")
     
     async def close(self):
         """Close database connection"""
@@ -30,79 +30,19 @@ class Database:
             print("✅ Database disconnected")
     
     async def _create_tables(self):
-        """Create all necessary tables with clean multi-platform structure"""
+        """Create application-specific tables (users handled by Supabase)"""
         async with self.pool.acquire() as conn:
-            # Main users table (platform agnostic)
+            # Transactions table (expenses + income)
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    email TEXT UNIQUE,
-                    phone_number TEXT,
-                    first_name TEXT,
-                    last_name TEXT,
-                    country_code TEXT DEFAULT 'US',
-                    timezone TEXT DEFAULT 'UTC',
-                    language TEXT DEFAULT 'en',
-                    subscription_status TEXT DEFAULT 'free' CHECK (subscription_status IN ('free', 'premium', 'enterprise', 'trial', 'suspended')),
-                    subscription_expires_at TIMESTAMP,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    email_verified BOOLEAN DEFAULT FALSE,
-                    phone_verified BOOLEAN DEFAULT FALSE,
-                    notification_preferences JSONB DEFAULT '{}',
-                    expense_categories_custom JSONB DEFAULT '[]',
-                    default_currency TEXT DEFAULT 'USD',
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW(),
-                    last_login_at TIMESTAMP
-                );
-                ALTER TABLE users ADD COLUMN password_hash TEXT;
-                ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;
-                ALTER TABLE users ADD COLUMN account_locked_until TIMESTAMP;
-                ALTER TABLE users ADD COLUMN password_reset_token TEXT;
-                ALTER TABLE users ADD COLUMN password_reset_expires TIMESTAMP;
-                
-                CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-                CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone_number);
-                CREATE INDEX IF NOT EXISTS idx_users_subscription ON users(subscription_status);
-                CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
-            """)
-            
-            # User platforms table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_platforms (
+                CREATE TABLE IF NOT EXISTS transactions (
                     id SERIAL PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    platform_type TEXT NOT NULL CHECK (platform_type IN ('telegram', 'whatsapp', 'mobile_app', 'web_app')),
-                    platform_user_id TEXT NOT NULL,
-                    platform_username TEXT,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    is_primary BOOLEAN DEFAULT FALSE,
-                    notification_enabled BOOLEAN DEFAULT TRUE,
-                    notification_settings JSONB DEFAULT '{}',
-                    device_info JSONB DEFAULT '{}',
-                    last_activity_at TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW(),
-                    
-                    UNIQUE(platform_type, platform_user_id)
-                );
-                
-                CREATE INDEX IF NOT EXISTS idx_platforms_user ON user_platforms(user_id);
-                CREATE INDEX IF NOT EXISTS idx_platforms_type ON user_platforms(platform_type);
-                CREATE INDEX IF NOT EXISTS idx_platforms_platform_user ON user_platforms(platform_user_id);
-                CREATE INDEX IF NOT EXISTS idx_platforms_primary ON user_platforms(is_primary);
-            """)
-            
-            # Expenses table
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS expenses (
-                    id SERIAL PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    amount DECIMAL(10,2) NOT NULL,
+                    user_id UUID NOT NULL, -- References Supabase auth.users.id
+                    amount DECIMAL(12,2) NOT NULL,
                     description TEXT NOT NULL,
                     category TEXT NOT NULL,
+                    transaction_type TEXT NOT NULL CHECK (transaction_type IN ('expense', 'income')),
                     original_message TEXT NOT NULL,
-                    source_platform TEXT DEFAULT 'telegram' CHECK (source_platform IN ('telegram', 'whatsapp', 'mobile_app', 'web_app')),
+                    source_platform TEXT DEFAULT 'web_app' CHECK (source_platform IN ('telegram', 'whatsapp', 'mobile_app', 'web_app')),
                     merchant TEXT,
                     date TIMESTAMP DEFAULT NOW(),
                     receipt_image_url TEXT,
@@ -111,24 +51,26 @@ class Database:
                     recurring_pattern TEXT,
                     tags JSONB DEFAULT '[]',
                     confidence_score DECIMAL(3,2),
-                    created_at TIMESTAMP DEFAULT NOW()
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
                 );
                 
-                CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(user_id);
-                CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
-                CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses(category);
-                CREATE INDEX IF NOT EXISTS idx_expenses_platform ON expenses(source_platform);
-                CREATE INDEX IF NOT EXISTS idx_expenses_amount ON expenses(amount);
+                CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+                CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
+                CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category);
+                CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(transaction_type);
+                CREATE INDEX IF NOT EXISTS idx_transactions_platform ON transactions(source_platform);
+                CREATE INDEX IF NOT EXISTS idx_transactions_amount ON transactions(amount);
             """)
             
-            # Reminders table
+            # Reminders table (updated to use Supabase user_id)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS reminders (
                     id SERIAL PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL, -- References Supabase auth.users.id
                     title TEXT NOT NULL,
                     description TEXT NOT NULL,
-                    source_platform TEXT DEFAULT 'telegram' CHECK (source_platform IN ('telegram', 'whatsapp', 'mobile_app', 'web_app')),
+                    source_platform TEXT DEFAULT 'web_app' CHECK (source_platform IN ('telegram', 'whatsapp', 'mobile_app', 'web_app')),
                     due_datetime TIMESTAMP,
                     reminder_type TEXT DEFAULT 'general' CHECK (reminder_type IN ('task', 'event', 'deadline', 'habit', 'general')),
                     priority TEXT DEFAULT 'medium' CHECK (priority IN ('urgent', 'high', 'medium', 'low')),
@@ -155,12 +97,12 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_reminders_notification ON reminders(notification_sent, due_datetime);
             """)
             
-            # User activity table
+            # User activity table (simplified - no user data stored locally)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS user_activity (
                     id SERIAL PRIMARY KEY,
-                    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
-                    activity_type TEXT NOT NULL CHECK (activity_type IN ('expense_added', 'reminder_added', 'reminder_completed', 'summary_requested', 'query', 'login', 'platform_added', 'registration')),
+                    user_id UUID NOT NULL, -- References Supabase auth.users.id
+                    activity_type TEXT NOT NULL CHECK (activity_type IN ('transaction_added', 'reminder_added', 'reminder_completed', 'summary_requested', 'query', 'login')),
                     platform_type TEXT,
                     activity_data JSONB DEFAULT '{}',
                     created_at TIMESTAMP DEFAULT NOW()
@@ -172,281 +114,121 @@ class Database:
             """)
 
     # ============================================================================
-    # USER MANAGEMENT OPERATIONS
+    # TRANSACTION OPERATIONS (Expenses + Income)
     # ============================================================================
     
-    async def create_user(self, user: User) -> User:
-        """Create a new user"""
+    async def save_transaction(self, transaction: Transaction) -> Transaction:
+        """Save transaction (expense or income) to database"""
         async with self.pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO users (
-                    id, email, phone_number, first_name, last_name, country_code, timezone, language,
-                    subscription_status, subscription_expires_at, is_active, email_verified, phone_verified,
-                    notification_preferences, expense_categories_custom, default_currency, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
-                ON CONFLICT (id) DO UPDATE SET
-                    email = EXCLUDED.email,
-                    phone_number = EXCLUDED.phone_number,
-                    first_name = EXCLUDED.first_name,
-                    last_name = EXCLUDED.last_name,
-                    country_code = EXCLUDED.country_code,
-                    timezone = EXCLUDED.timezone,
-                    language = EXCLUDED.language,
-                    updated_at = NOW()
-            """, 
-                user.id, user.email, user.phone_number, user.first_name, user.last_name,
-                user.country_code, user.timezone, user.language, user.subscription_status,
-                user.subscription_expires_at, user.is_active, user.email_verified, user.phone_verified,
-                json.dumps(user.notification_preferences), json.dumps(user.expense_categories_custom),
-                user.default_currency
-            )
-            return user
-    
-    async def get_user(self, user_id: str) -> Optional[User]:
-        """Get user by ID"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
-            return self._row_to_user(row) if row else None
-    
-    async def get_user_by_email(self, email: str) -> Optional[User]:
-        """Get user by email"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
-            return self._row_to_user(row) if row else None
-    
-    async def get_user_by_phone(self, phone_number: str) -> Optional[User]:
-        """Get user by phone number"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE phone_number = $1", phone_number)
-            return self._row_to_user(row) if row else None
-    
-    async def update_user(self, user: User) -> User:
-        """Update user information"""
-        async with self.pool.acquire() as conn:
-            await conn.execute("""
-                UPDATE users SET
-                    email = $2,
-                    phone_number = $3,
-                    first_name = $4,
-                    last_name = $5,
-                    country_code = $6,
-                    timezone = $7,
-                    language = $8,
-                    subscription_status = $9,
-                    subscription_expires_at = $10,
-                    is_active = $11,
-                    email_verified = $12,
-                    phone_verified = $13,
-                    notification_preferences = $14,
-                    expense_categories_custom = $15,
-                    default_currency = $16,
-                    updated_at = NOW()
-                WHERE id = $1
-            """,
-                user.id, user.email, user.phone_number, user.first_name, user.last_name,
-                user.country_code, user.timezone, user.language, user.subscription_status,
-                user.subscription_expires_at, user.is_active, user.email_verified, user.phone_verified,
-                json.dumps(user.notification_preferences), json.dumps(user.expense_categories_custom),
-                user.default_currency
-            )
-            return user
-    
-    async def update_user_last_login(self, user_id: str) -> None:
-        """Update user's last login time"""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1",
-                user_id
-            )
-    
-    async def get_all_users(self, limit: int = 100, offset: int = 0) -> List[User]:
-        """Get all users with pagination"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-                limit, offset
-            )
-            return [self._row_to_user(row) for row in rows]
-
-    # ============================================================================
-    # PLATFORM MANAGEMENT OPERATIONS
-    # ============================================================================
-    
-    async def create_user_platform(self, platform: UserPlatform) -> UserPlatform:
-        """Create or update a user platform"""
-        async with self.pool.acquire() as conn:
-            platform_id = await conn.fetchval("""
-                INSERT INTO user_platforms (
-                    user_id, platform_type, platform_user_id, platform_username,
-                    is_active, is_primary, notification_enabled, notification_settings,
-                    device_info, last_activity_at, created_at, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-                ON CONFLICT (platform_type, platform_user_id) DO UPDATE SET
-                    user_id = EXCLUDED.user_id,
-                    platform_username = EXCLUDED.platform_username,
-                    is_active = EXCLUDED.is_active,
-                    notification_enabled = EXCLUDED.notification_enabled,
-                    updated_at = NOW()
-                RETURNING id
-            """,
-                platform.user_id, platform.platform_type, platform.platform_user_id,
-                platform.platform_username, platform.is_active, platform.is_primary,
-                platform.notification_enabled, json.dumps(platform.notification_settings),
-                json.dumps(platform.device_info), platform.last_activity_at
-            )
-            
-            platform.id = platform_id
-            return platform
-    
-    async def get_user_platforms(self, user_id: str) -> List[UserPlatform]:
-        """Get all platforms for a user"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM user_platforms WHERE user_id = $1 ORDER BY is_primary DESC, created_at ASC",
-                user_id
-            )
-            return [self._row_to_platform(row) for row in rows]
-    
-    async def get_user_by_platform(self, platform_type: str, platform_user_id: str) -> Optional[Tuple[User, UserPlatform]]:
-        """Get user and platform info by platform credentials"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("""
-                SELECT u.*, up.* FROM users u
-                JOIN user_platforms up ON u.id = up.user_id
-                WHERE up.platform_type = $1 AND up.platform_user_id = $2 AND up.is_active = TRUE
-            """, platform_type, platform_user_id)
-            
-            if row:
-                user = self._row_to_user(row)
-                platform = self._row_to_platform(row)
-                return user, platform
-            return None
-    
-    async def update_platform_activity(self, platform_type: str, platform_user_id: str) -> None:
-        """Update platform last activity"""
-        async with self.pool.acquire() as conn:
-            await conn.execute("""
-                UPDATE user_platforms 
-                SET last_activity_at = NOW(), updated_at = NOW()
-                WHERE platform_type = $1 AND platform_user_id = $2
-            """, platform_type, platform_user_id)
-    
-    async def set_primary_platform(self, user_id: str, platform_id: int) -> bool:
-        """Set a platform as primary for a user"""
-        async with self.pool.acquire() as conn:
-            async with conn.transaction():
-                # Remove primary from all other platforms
-                await conn.execute("""
-                    UPDATE user_platforms 
-                    SET is_primary = FALSE, updated_at = NOW()
-                    WHERE user_id = $1
-                """, user_id)
-                
-                # Set the specified platform as primary
-                result = await conn.execute("""
-                    UPDATE user_platforms 
-                    SET is_primary = TRUE, updated_at = NOW()
-                    WHERE id = $1 AND user_id = $2
-                """, platform_id, user_id)
-                
-                return result != "UPDATE 0"
-
-    # ============================================================================
-    # EXPENSE OPERATIONS
-    # ============================================================================
-    
-    async def save_expense(self, expense: Expense) -> Expense:
-        """Save expense to database"""
-        async with self.pool.acquire() as conn:
-            expense_id = await conn.fetchval("""
-                INSERT INTO expenses (
-                    user_id, amount, description, category, original_message, source_platform,
-                    merchant, date, receipt_image_url, location, is_recurring, recurring_pattern,
-                    tags, confidence_score
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            transaction_id = await conn.fetchval("""
+                INSERT INTO transactions (
+                    user_id, amount, description, category, transaction_type, original_message, 
+                    source_platform, merchant, date, receipt_image_url, location, is_recurring, 
+                    recurring_pattern, tags, confidence_score
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
                 RETURNING id
             """, 
-                expense.user_id, expense.amount, expense.description, expense.category,
-                expense.original_message, expense.source_platform, expense.merchant, 
-                expense.date or datetime.now(), expense.receipt_image_url,
-                json.dumps(expense.location) if expense.location else None,
-                expense.is_recurring, expense.recurring_pattern,
-                json.dumps(expense.tags), expense.confidence_score
+                transaction.user_id, transaction.amount, transaction.description, transaction.category,
+                transaction.transaction_type, transaction.original_message, transaction.source_platform, 
+                transaction.merchant, transaction.date or datetime.now(), transaction.receipt_image_url,
+                json.dumps(transaction.location) if transaction.location else None,
+                transaction.is_recurring, transaction.recurring_pattern,
+                json.dumps(transaction.tags), transaction.confidence_score
             )
             
-            expense.id = expense_id
+            transaction.id = transaction_id
             
             # Log activity
             await self._log_user_activity(
-                expense.user_id, 
-                'expense_added', 
+                transaction.user_id, 
+                'transaction_added', 
                 {
-                    'expense_id': expense_id, 
-                    'amount': float(expense.amount), 
-                    'category': expense.category,
-                    'platform': expense.source_platform
+                    'transaction_id': transaction_id, 
+                    'amount': float(transaction.amount), 
+                    'category': transaction.category,
+                    'type': transaction.transaction_type,
+                    'platform': transaction.source_platform
                 }
             )
             
-            return expense
+            return transaction
     
-    async def get_user_expenses(self, user_id: str, days: int = 30) -> List[Expense]:
-        """Get user's recent expenses"""
+    async def get_user_transactions(self, user_id: str, days: int = 30, transaction_type: str = None) -> List[Transaction]:
+        """Get user's recent transactions (expenses and/or income)"""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT * FROM expenses 
+            query = """
+                SELECT * FROM transactions 
                 WHERE user_id = $1 
                 AND date >= $2
-                ORDER BY date DESC
-            """, user_id, datetime.now() - timedelta(days=days))
+            """
+            params = [user_id, datetime.now() - timedelta(days=days)]
             
-            return [self._row_to_expense(row) for row in rows]
+            if transaction_type:
+                query += " AND transaction_type = $3"
+                params.append(transaction_type)
+            
+            query += " ORDER BY date DESC"
+            
+            rows = await conn.fetch(query, *params)
+            return [self._row_to_transaction(row) for row in rows]
     
-    async def get_expense_summary(self, user_id: str, days: int = 30) -> ExpenseSummary:
-        """Get expense summary for user"""
+    async def get_transaction_summary(self, user_id: str, days: int = 30) -> TransactionSummary:
+        """Get comprehensive transaction summary (expenses + income)"""
         async with self.pool.acquire() as conn:
-            # Total summary
+            cutoff_date = datetime.now() - timedelta(days=days)
+            
+            # Overall summary
             total_row = await conn.fetchrow("""
                 SELECT 
-                    COUNT(*) as count,
-                    COALESCE(SUM(amount), 0) as total,
-                    COALESCE(AVG(amount), 0) as average
-                FROM expenses 
-                WHERE user_id = $1 
-                AND date >= $2
-            """, user_id, datetime.now() - timedelta(days=days))
+                    COUNT(*) as total_count,
+                    COUNT(*) FILTER (WHERE transaction_type = 'expense') as expense_count,
+                    COUNT(*) FILTER (WHERE transaction_type = 'income') as income_count,
+                    COALESCE(SUM(amount) FILTER (WHERE transaction_type = 'expense'), 0) as total_expenses,
+                    COALESCE(SUM(amount) FILTER (WHERE transaction_type = 'income'), 0) as total_income,
+                    COALESCE(AVG(amount) FILTER (WHERE transaction_type = 'expense'), 0) as avg_expense,
+                    COALESCE(AVG(amount) FILTER (WHERE transaction_type = 'income'), 0) as avg_income
+                FROM transactions 
+                WHERE user_id = $1 AND date >= $2
+            """, user_id, cutoff_date)
             
-            # Category breakdown
+            # Category breakdown by type
             category_rows = await conn.fetch("""
                 SELECT 
+                    transaction_type,
                     category,
                     COUNT(*) as count,
                     SUM(amount) as total
-                FROM expenses 
-                WHERE user_id = $1 
-                AND date >= $2
-                GROUP BY category
-                ORDER BY total DESC
-            """, user_id, datetime.now() - timedelta(days=days))
+                FROM transactions 
+                WHERE user_id = $1 AND date >= $2
+                GROUP BY transaction_type, category
+                ORDER BY transaction_type, total DESC
+            """, user_id, cutoff_date)
             
-            categories = []
+            categories_by_type = {"expense": [], "income": []}
             for row in category_rows:
-                categories.append({
+                categories_by_type[row['transaction_type']].append({
                     'category': row['category'],
                     'count': row['count'],
                     'total': float(row['total'])
                 })
             
-            return ExpenseSummary(
-                total_amount=total_row['total'],
-                total_count=total_row['count'],
-                average_amount=total_row['average'],
-                categories=categories,
+            net_income = total_row['total_income'] - total_row['total_expenses']
+            
+            return TransactionSummary(
+                total_expenses=total_row['total_expenses'],
+                total_income=total_row['total_income'],
+                net_income=net_income,
+                expense_count=total_row['expense_count'],
+                income_count=total_row['income_count'],
+                average_expense=total_row['avg_expense'],
+                average_income=total_row['avg_income'],
+                expense_categories=categories_by_type['expense'],
+                income_categories=categories_by_type['income'],
                 period_days=days
             )
 
     # ============================================================================
-    # REMINDER OPERATIONS
+    # REMINDER OPERATIONS (Updated for Supabase)
     # ============================================================================
     
     async def save_reminder(self, reminder: Reminder) -> Reminder:
@@ -525,21 +307,6 @@ class Database:
             
             return [self._row_to_reminder(row) for row in rows]
     
-    async def get_overdue_reminders(self, user_id: str) -> List[Reminder]:
-        """Get overdue reminders"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT * FROM reminders 
-                WHERE user_id = $1 
-                AND is_completed = FALSE
-                AND due_datetime IS NOT NULL
-                AND due_datetime < NOW()
-                AND (snooze_until IS NULL OR snooze_until <= NOW())
-                ORDER BY due_datetime ASC
-            """, user_id)
-            
-            return [self._row_to_reminder(row) for row in rows]
-    
     async def mark_reminder_complete(self, reminder_id: int, user_id: str) -> bool:
         """Mark reminder as completed"""
         async with self.pool.acquire() as conn:
@@ -559,26 +326,6 @@ class Database:
                 )
             
             return success
-    
-    async def search_reminders(self, user_id: str, query: str, limit: int = 20) -> List[Reminder]:
-        """Search reminders by title, description, or tags"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT * FROM reminders 
-                WHERE user_id = $1 
-                AND (
-                    title ILIKE $2 OR 
-                    description ILIKE $2 OR 
-                    tags ILIKE $2
-                )
-                ORDER BY 
-                    CASE WHEN is_completed THEN 1 ELSE 0 END,
-                    due_datetime ASC NULLS LAST,
-                    created_at DESC
-                LIMIT $3
-            """, user_id, f"%{query}%", limit)
-            
-            return [self._row_to_reminder(row) for row in rows]
     
     async def get_reminder_summary(self, user_id: str, days: int = 30) -> ReminderSummary:
         """Get reminder summary for user"""
@@ -629,17 +376,6 @@ class Database:
                 by_type=by_type,
                 period_days=days
             )
-    
-    async def mark_notification_sent(self, reminder_id: int) -> bool:
-        """Mark notification as sent for a reminder"""
-        async with self.pool.acquire() as conn:
-            result = await conn.execute("""
-                UPDATE reminders 
-                SET notification_sent = TRUE, updated_at = NOW()
-                WHERE id = $1
-            """, reminder_id)
-            
-            return result != "UPDATE 0"
 
     # ============================================================================
     # ACTIVITY TRACKING
@@ -668,17 +404,9 @@ class Database:
                 AND created_at >= $2
             """, user_id, datetime.now() - timedelta(days=days))
             
-            # Get active platforms
-            platform_rows = await conn.fetch("""
-                SELECT DISTINCT platform_type FROM user_platforms 
-                WHERE user_id = $1 AND is_active = TRUE
-            """, user_id)
-            
-            active_platforms = [row['platform_type'] for row in platform_rows]
-            
             # Get last activity dates
-            last_expense = await conn.fetchval("""
-                SELECT MAX(created_at) FROM expenses WHERE user_id = $1
+            last_transaction = await conn.fetchval("""
+                SELECT MAX(created_at) FROM transactions WHERE user_id = $1
             """, user_id)
             
             last_reminder = await conn.fetchval("""
@@ -686,75 +414,31 @@ class Database:
             """, user_id)
             
             # Get summaries
-            expense_summary = await self.get_expense_summary(user_id, days)
+            transaction_summary = await self.get_transaction_summary(user_id, days)
             reminder_summary = await self.get_reminder_summary(user_id, days)
             
             return UserActivity(
                 user_id=user_id,
-                expense_summary=expense_summary,
+                transaction_summary=transaction_summary,
                 reminder_summary=reminder_summary,
-                last_expense_date=last_expense,
+                last_transaction_date=last_transaction,
                 last_reminder_date=last_reminder,
-                total_interactions=activity_row['total_interactions'],
-                active_platforms=active_platforms
+                total_interactions=activity_row['total_interactions']
             )
 
     # ============================================================================
     # UTILITY METHODS
     # ============================================================================
     
-
-    
-    def _row_to_user(self, row) -> User:
-        """Convert database row to User object"""
-        return User(
+    def _row_to_transaction(self, row) -> Transaction:
+        """Convert database row to Transaction object"""
+        return Transaction(
             id=row['id'],
-            email=row['email'],
-            phone_number=row['phone_number'],
-            first_name=row['first_name'],
-            last_name=row['last_name'],
-            country_code=row['country_code'],
-            timezone=row['timezone'],
-            language=row['language'],
-            subscription_status=row['subscription_status'],
-            subscription_expires_at=row['subscription_expires_at'],
-            is_active=row['is_active'],
-            email_verified=row['email_verified'],
-            phone_verified=row['phone_verified'],
-            notification_preferences=json.loads(row['notification_preferences'] or '{}'),
-            expense_categories_custom=json.loads(row['expense_categories_custom'] or '[]'),
-            default_currency=row['default_currency'],
-            created_at=row['created_at'],
-            updated_at=row['updated_at'],
-            last_login_at=row['last_login_at']
-        )
-    
-    def _row_to_platform(self, row) -> UserPlatform:
-        """Convert database row to UserPlatform object"""
-        return UserPlatform(
-            id=row['id'],
-            user_id=row['user_id'],
-            platform_type=row['platform_type'],
-            platform_user_id=row['platform_user_id'],
-            platform_username=row['platform_username'],
-            is_active=row['is_active'],
-            is_primary=row['is_primary'],
-            notification_enabled=row['notification_enabled'],
-            notification_settings=json.loads(row['notification_settings'] or '{}'),
-            device_info=json.loads(row['device_info'] or '{}'),
-            last_activity_at=row['last_activity_at'],
-            created_at=row['created_at'],
-            updated_at=row['updated_at']
-        )
-    
-    def _row_to_expense(self, row) -> Expense:
-        """Convert database row to Expense object"""
-        return Expense(
-            id=row['id'],
-            user_id=row['user_id'],
+            user_id=str(row['user_id']),
             amount=row['amount'],
             description=row['description'],
             category=row['category'],
+            transaction_type=row['transaction_type'],
             original_message=row['original_message'],
             source_platform=row['source_platform'],
             merchant=row['merchant'],
@@ -765,14 +449,15 @@ class Database:
             recurring_pattern=row['recurring_pattern'],
             tags=json.loads(row['tags']) if row['tags'] else [],
             confidence_score=row['confidence_score'],
-            created_at=row['created_at']
+            created_at=row['created_at'],
+            updated_at=row['updated_at']
         )
     
     def _row_to_reminder(self, row) -> Reminder:
         """Convert database row to Reminder object"""
         return Reminder(
             id=row['id'],
-            user_id=row['user_id'],
+            user_id=str(row['user_id']),
             title=row['title'],
             description=row['description'],
             source_platform=row['source_platform'],
