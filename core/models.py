@@ -39,7 +39,7 @@ class Transaction:
     amount: Decimal
     description: str
     category: str
-    transaction_type: str  # 'expense' or 'income'
+    transaction_type: str   # 'expense' or 'income'
     original_message: str
     source_platform: str = PlatformType.WEB_APP.value
     merchant: Optional[str] = None

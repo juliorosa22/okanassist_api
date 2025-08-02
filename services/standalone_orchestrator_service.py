@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from core.database import Database
-from agents.intelligent_orchestrator_agent import IntelligentOrchestratorAgent
+from agents.orchestrator_agent import OrchestratorAgent
 
 class StandaloneOrchestratorService:
     """
@@ -22,7 +22,7 @@ class StandaloneOrchestratorService:
         self.groq_api_key = groq_api_key
         self.database_url = database_url
         self.database: Optional[Database] = None
-        self.orchestrator: Optional[IntelligentOrchestratorAgent] = None
+        self.orchestrator: Optional[OrchestratorAgent] = None
         self.is_running = False
         
         # Service metrics
@@ -47,7 +47,7 @@ class StandaloneOrchestratorService:
             
             # Initialize orchestrator
             print("🧠 Setting up intelligent orchestrator...")
-            self.orchestrator = IntelligentOrchestratorAgent(self.groq_api_key, self.database)
+            self.orchestrator = OrchestratorAgent(self.groq_api_key, self.database)
             
             # Setup agent tools
             print("🔧 Configuring agent tools...")
