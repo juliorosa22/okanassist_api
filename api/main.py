@@ -17,8 +17,8 @@ from core.database import Database
 from api.core.dependencies import set_dependencies
 from api.auth import endpoints as auth_endpoints
 from api.app import transactions, reminders, utils
-from bot.telegram_bot import TelegramBot
-from agents.orchestrator_agent import OrchestratorAgent
+#from bot.telegram_bot import TelegramBot
+#from agents.orchestrator_agent import OrchestratorAgent
 
 
 # Global instances
@@ -59,21 +59,21 @@ async def lifespan(app: FastAPI):
             print("🤖 Initializing Telegram bot...")
             
             # Create orchestrator for bot
-            orchestrator = OrchestratorAgent(GROQ_API_KEY, database)
+            #orchestrator = OrchestratorAgent(GROQ_API_KEY, database)
             
             # Create registration service for bot
-            registration_service = UserRegistrationService(database)
+            #registration_service = UserRegistrationService(database)
             
             # Create and setup bot
-            telegram_bot = TelegramBot(
-                token=TELEGRAM_BOT_TOKEN,
-                orchestrator=orchestrator,
-                registration_service=registration_service
-            )
-            telegram_bot.setup()
+            #telegram_bot = TelegramBot(
+            #    token=TELEGRAM_BOT_TOKEN,
+            #    orchestrator=orchestrator,
+            #    registration_service=registration_service
+            #)
+            #telegram_bot.setup()
             
             # Start bot as background task
-            bot_task = asyncio.create_task(telegram_bot.run())
+            #bot_task = asyncio.create_task(telegram_bot.run())
             print("✅ Telegram bot started successfully")
         else:
             print("⚠️ Telegram bot disabled (missing TELEGRAM_BOT_TOKEN or GROQ_API_KEY)")

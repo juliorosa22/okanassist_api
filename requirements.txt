@@ -22,9 +22,11 @@ google-auth-httplib2
 # HTTP requests
 httpx
 requests
-
+aiofiles
+aiohttp
 # Data validation
 pydantic
+pydantic[email]
 
 # Core FastAPI and web framework
 fastapi
@@ -32,6 +34,7 @@ uvicorn[standard]
 
 # Utilities
 python-dateutil
+supabase
 
 # Development
 pytest
