@@ -146,7 +146,7 @@ async def get_auth_providers():
             "name": "google",
             "display_name": "Google",
             "icon": "🔍",
-            "enabled": bool(os.getenv("SUPABASE_GOOGLE_CLIENT_ID"))
+            "enabled": bool(os.getenv("GOOGLE_CLIENT_ID"))
         },
         {
             "name": "github", 

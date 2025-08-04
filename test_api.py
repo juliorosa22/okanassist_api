@@ -40,23 +40,53 @@ async def test_api_health():
                     print(f"❌ Health check failed: {response.status}")
             
             # Test Google auth URL endpoint
-            print("\n3. Testing Google auth URL endpoint...")
-            async with session.get(f"{api_url}/auth/google/url?redirect_scheme=okanassist") as response:
+                       # Test OAuth providers endpoint
+            print("\n3. Testing OAuth providers endpoint...")
+            async with session.get(f"{api_url}/auth/providers") as response:
                 if response.status == 200:
                     data = await response.json()
                     if data.get('success'):
-                        print(f"✅ Google auth URL generated")
-                        print(f"   Client ID: {data.get('client_id', 'Unknown')[:20]}...")
-                        print(f"   Auth URL: {data.get('auth_url', 'Unknown')[:50]}...")
+                        providers = data.get('providers', [])
+                        print(f"✅ OAuth providers endpoint working")
+                        print(f"   Available providers: {len(providers)}")
+                        for provider in providers:
+                            print(f"   - {provider.get('display_name', 'Unknown')} ({provider.get('name', 'unknown')}): {'✅' if provider.get('enabled') else '❌'}")
                     else:
-                        print(f"❌ Google auth URL failed: {data}")
+                        print(f"❌ OAuth providers failed: {data}")
                 else:
                     data = await response.json() if response.content_type == 'application/json' else {}
-                    print(f"❌ Google auth URL endpoint failed: {response.status}")
+                    print(f"❌ OAuth providers endpoint failed: {response.status}")
+                    print(f"   Error: {data.get('detail', 'Unknown error')}")
+            
+            # Test OAuth URL generation (Google)
+            print("\n4. Testing Google OAuth URL generation...")
+            oauth_payload = {
+                "provider": "google",
+                "redirect_to": "okanassist://auth/callback"
+            }
+            async with session.post(f"{api_url}/auth/oauth/url", json=oauth_payload) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get('success'):
+                        print(f"✅ Google OAuth URL generated")
+                        print(f"   Provider: {data.get('provider', 'Unknown')}")
+                        auth_url = data.get('url', '')
+                        print(f"   Auth URL: {auth_url[:80]}...")
+                        
+                        # Validate URL format
+                        if 'accounts.google.com' in auth_url:
+                            print(f"   ✅ Valid Google OAuth URL format")
+                        else:
+                            print(f"   ⚠️  Unexpected OAuth URL format")
+                    else:
+                        print(f"❌ Google OAuth URL failed: {data}")
+                else:
+                    data = await response.json() if response.content_type == 'application/json' else {}
+                    print(f"❌ Google OAuth URL endpoint failed: {response.status}")
                     print(f"   Error: {data.get('detail', 'Unknown error')}")
             
             # Test categories endpoint
-            print("\n4. Testing categories endpoint...")
+            print("\n5. Testing categories endpoint...")
             async with session.get(f"{api_url}/api/categories") as response:
                 if response.status == 200:
                     data = await response.json()
