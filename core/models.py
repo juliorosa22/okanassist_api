@@ -247,17 +247,19 @@ class UserActivity:
 # Transaction categories for intelligent classification
 TRANSACTION_CATEGORIES = {
     # Expense categories
-    "expense": {
-        "Food & Dining": ["restaurant", "coffee", "lunch", "dinner", "food", "grocery", "takeout"],
-        "Transportation": ["uber", "taxi", "gas", "fuel", "parking", "bus", "train", "flight"],
-        "Shopping": ["amazon", "store", "clothes", "electronics", "book", "shopping"],
-        "Entertainment": ["movie", "game", "concert", "netflix", "spotify", "streaming"],
-        "Utilities": ["electric", "water", "internet", "phone", "rent", "mortgage"],
-        "Healthcare": ["doctor", "hospital", "pharmacy", "medicine", "dentist"],
-        "Travel": ["hotel", "airbnb", "vacation", "trip", "booking"],
-        "Education": ["school", "course", "tuition", "book", "training"],
-        "Other": []
-    },
+     "expense": {
+        "Essentials": [
+          "rent", "mortgage", "utility", "electric", "water", "gas", "fuel", "groceries", "grocery", "food", "insurance", "phone", "internet", "healthcare", "doctor", "pharmacy", "medicine", "medical", "dentist"
+        ],
+        "Food & Dining": ["restaurant", "coffee", "lunch", "dinner", "takeout", "starbucks", "mcdonalds"],
+        "Transportation": ["uber", "taxi", "parking", "bus", "train", "flight", "lyft"],
+        "Shopping": ["amazon", "store", "clothes", "electronics", "book", "shopping", "mall"],
+        "Entertainment": ["movie", "game", "concert", "netflix", "spotify", "streaming", "music"],
+        "Utilities": ["utility"],
+        "Healthcare": ["doctor", "hospital", "pharmacy", "medicine", "dentist", "medical"],  # Also in Essentials
+        "Travel": ["hotel", "airbnb", "vacation", "trip", "booking", "travel"],
+        "Education": ["school", "course", "tuition", "book", "education", "training"]
+      },
     # Income categories
     "income": {
         "Salary": ["salary", "paycheck", "wage", "income", "pay"],
